@@ -364,6 +364,10 @@ body.ingame .fighter .tapme { font-size: clamp(13px, min(5.5cqi, 4cqh), 20px); }
 body.ingame #panel { overflow: hidden; padding: 6px 12px 12px 10px; margin-inline: -8px; }
 body.ingame #panel.scroll { overflow-y: auto; scrollbar-width: thin; }
 body.ingame .fighter.drop { transform: scale(1.02) rotate(-.6deg); }
+
+.card.meta { --k: #ffc89a; } .mini.meta { --k: #ffc89a; }
+.rplays li.dead > span { text-decoration: line-through 2px var(--red); opacity: .55; }
+.rplays li .note { font-weight: 700; font-size: 12px; color: var(--red); }
 @media (prefers-reduced-motion: reduce) { * { animation: none !important; transition: none !important; } }
 </style>
 </head>
@@ -379,7 +383,7 @@ body.ingame .fighter.drop { transform: scale(1.02) rotate(-.6deg); }
     <div>
       <h1><span>球球</span>擂台</h1>
       <div class="sub">~ ball arena, notebook edition ~</div>
-      <p class="lede">50 種能力球在擂台裡互撞對打。每局大家祕密出牌，從 100 種卡牌裡挑增強、削弱，甚至讓傷害正負顛倒的牌，再押籌碼賭誰會贏。</p>
+      <p class="lede">100 種能力球在擂台裡互撞對打。每局大家祕密出牌，從 200 種卡牌裡挑增強、削弱、讓傷害正負顛倒，或是專門搞亂別人出牌的操控牌，再押籌碼賭誰會贏。</p>
       <div class="doodle" id="doodle"></div>
     </div>
     <div class="entry sk">
@@ -398,8 +402,8 @@ body.ingame .fighter.drop { transform: scale(1.02) rotate(-.6deg); }
     <div data-n="4"><b>揭牌開打</b><p>牌一張張翻開飛到選手身上，然後開打。打完設定局數，籌碼最多的人贏。</p></div>
   </div>
   <div class="wrap">
-    <details class="dexw sk"><summary>選手圖鑑（50 種）</summary><div id="dex"></div></details>
-    <details class="dexw sk"><summary>卡牌一覽（100 種）</summary><div id="cardDex"></div></details>
+    <details class="dexw sk"><summary>選手圖鑑（100 種）</summary><div id="dex"></div></details>
+    <details class="dexw sk"><summary>卡牌一覽（200 種）</summary><div id="cardDex"></div></details>
   </div>
   <footer class="foot">房主的頁面要保持開著，朋友才連得進來。</footer>
 </main>
@@ -476,7 +480,20 @@ class World {
       this.mains.push(b);
     });
   }
-  spawn(d, team, x, y, o = {}) { const b = makeBall(d, team, x, y, o); this.balls.push(b); d.init && d.init(b, this); return b; }
+  spawn(d, team, x, y, o = {}) { const b = makeBall(d, team, x, y, o); this.balls.push(b); d.init && d.init(b, this); if (!o.minion) this.applyModWeapons(b); return b; }
+  applyModWeapons(b) {
+    const m = b.mod;
+    if (m.addOrb) b.weapons.push(weapon({ kind: 'orbs', look: 'orbs', n: m.addOrb, off: 40, orbR: 8, spin: 3.5, dmg: 2, cd: 0.3, knock: 140, extra: 1 }));
+    if (m.addSword) b.weapons.push(weapon({ kind: 'blade', look: 'sword', len: 52, width: 6, spin: 4, dmg: 2 * m.addSword, cd: 0.35, knock: 180, extra: 1 }));
+    if (m.addShield) b.weapons.push(weapon({ kind: 'arc', look: 'shield', off: 14, span: 1.1, thick: 8, dmg: 1, knock: 400, cd: 0.6, reflect: true, spin: 0, track: 2, extra: 1 }));
+    if (m.twin) { const w0 = b.weapons.find(w => !w.extra && w.kind !== 'arc'); if (w0) { const c = Object.assign({}, w0, { uid: UID++, a: w0.a + Math.PI, hitCd: new Map(), circles: [], extra: 1 }); b.weapons.push(c); } }
+    for (const w of b.weapons) {
+      if (m.armLen && m.armLen !== 1) { if (w.kind === 'blade') w.len = Math.round(w.len * m.armLen); else if (w.kind === 'orbs') w.off = Math.round(w.off * m.armLen); }
+      if (m.spinMul && m.spinMul !== 1) w.spin *= m.spinMul;
+    }
+    if (m.silenceStart) b.silence = Math.max(b.silence || 0, m.silenceStart);
+    if (m.lateEntry) { b.frozen = Math.max(b.frozen, m.lateEntry); b.inv = Math.max(b.inv, m.lateEntry); }
+  }
   enemies(b) { return this.balls.filter(e => !e.dead && e.team !== b.team); }
   nearest(b, mainsFirst) {
     let best = null, bd = 1e9, bestM = null, bdm = 1e9;
@@ -540,12 +557,20 @@ class World {
     if (t.ghost > 0) { this.text(t.x, t.y - t.r - 6, '閃避', '#cdbfff', 13); return false; }
     if (t.inv > 0) { this.text(t.x, t.y - t.r - 6, '無敵', '#ffe08a', 13); return false; }
     const so = src ? this.owner(src) : null, sm = so ? so.mod : null, tm = t.mod;
+    if (so && so.jinx > 0 && Math.random() < so.jinx) { so.jinx = 0; this.text(t.x, t.y - t.r - 6, '落空', '#9aa3b5', 13); return false; }
     if (sm && sm.fumble && Math.random() < sm.fumble) { this.text(t.x, t.y - t.r - 6, '落空', '#9aa3b5', 13); return false; }
     if (tm.dodge && Math.random() < tm.dodge) { this.text(t.x, t.y - t.r - 6, '閃避', '#cdbfff', 13); return false; }
     let mul = so ? this.outFactor(so) : 1, crit = false;
     if (so && ((sm.crit + tm.critIn) > 0) && Math.random() < sm.crit + tm.critIn) { crit = true; mul *= sm.critMul; }
     if (o.crit) { crit = true; mul *= o.crit; }
     if (sm && sm.execute && t.hp < t.maxHp * 0.25) mul *= 1 + sm.execute;
+    if (sm) {
+      if (sm.gambler) mul *= rand(0, 3);
+      if (o.proj && sm.scope) mul *= sm.scope;
+      if (o.melee && sm.dull) mul *= sm.dull;
+      if (sm.backstab && src) { const vs = Math.hypot(t.vx, t.vy) || 1; if (((src.x - t.x) * t.vx + (src.y - t.y) * t.vy) / vs < -t.r * 0.3) { mul *= sm.backstab; this.text(t.x, t.y - t.r - 20, '背刺', '#b38cff', 13); } }
+    }
+    if (t.vuln) mul *= 1 + t.vuln;
     amt = amt * mul * this.inFactor(t);
     if (so && tm.bounty) amt += tm.bounty;
     if (tm.brittle && amt > 5) amt += tm.brittle;
@@ -556,6 +581,7 @@ class World {
       const k = o.knock * (sm ? sm.knockOut : 1) * tm.knockIn;
       if (kx !== undefined) { t.vx += kx * k / t.mass; t.vy += ky * k / t.mass; }
     }
+    if (tm.absorb && o.proj) { t.hp = Math.min(t.maxHp, t.hp + amt); this.text(t.x, t.y - t.r - 4, '吸收 +' + fmt(amt), '#7dffa8', 13); return true; }
     // sign flip: damage becomes healing
     if (odd((sm ? sm.invOut : 0) + (this.invActive(t) ? 1 : 0))) {
       t.hp = Math.min(t.maxHp, t.hp + amt);
@@ -576,6 +602,29 @@ class World {
       if (sm.burnHit) this.addBurn(t, sm.burnHit);
       if (sm.poisonHit) this.addPoison(t, sm.poisonHit);
       if (sm.chillHit) this.addChill(t, sm.chillHit);
+    }
+    if (so && sm && so !== t) {
+      if (sm.corrode) t.vuln = Math.min(1, (t.vuln || 0) + sm.corrode);
+      if (sm.drainSpeed && !t.minion) { t.spdMul = Math.max(0.4, t.spdMul * (1 - sm.drainSpeed)); so.spdMul = Math.min(2, so.spdMul * (1 + sm.drainSpeed)); }
+      if (sm.stealMax && !t.minion && t.maxHp > 20) { t.maxHp -= sm.stealMax; so.maxHp += sm.stealMax; so.hp += sm.stealMax; }
+      if (sm.frenzy) so.spdMul = Math.min(2, so.spdMul * (1 + sm.frenzy));
+      if (sm.energy) so.barrier = Math.min(60, so.barrier + sm.energy);
+      if (sm.chainHit && !o.chain && Math.random() < sm.chainHit) { const others = this.enemies(so).filter(x => x !== t); const x2 = others[(Math.random() * others.length) | 0]; if (x2) { this.fx.push({ k: 'bolt', pts: zigzag(t.x, t.y, x2.x, x2.y, 5), c: '#fff3a0', life: 0.2, max: 0.2 }); this.damage(x2, amt, null, { chain: true, noStop: true, color: '#fff3a0' }); } }
+      if (crit && sm.critExplode && !o.chain) { this.ring(t.x, t.y, 70, '#ff9b3d', 0.35); for (const x2 of this.enemies(so)) if (x2 !== t && Math.hypot(x2.x - t.x, x2.y - t.y) < 70 + x2.r) this.damage(x2, 4, null, { chain: true, noStop: true, color: '#ffcc80' }); }
+    }
+    if (so && so !== t && !o.retal && !o.thorn && so.team !== t.team) {
+      if (tm.toxicBlood) this.addPoison(so, 1);
+      if (tm.flameArmor) this.addBurn(so, 2);
+      if (tm.frostArmor) this.addChill(so, 0.1);
+      if (tm.shockArmor) this.damage(so, 2, t, { retal: true, noStop: true, color: '#fff3a0' });
+    }
+    if (!o.link && !t.minion) {
+      if (tm.lifeLink) { const es = this.mains.filter(x => !x.dead && x.team !== t.team), x2 = es[(Math.random() * es.length) | 0]; if (x2) { const h = amt * 0.5; t.hp += h; this.fx.push({ k: 'blink', x1: t.x, y1: t.y, x2: x2.x, y2: x2.y, c: '#ff8fab', life: 0.3, max: 0.3 }); this.damage(x2, h, null, { link: true, noStop: true, color: '#ff8fab' }); } }
+      if (tm.fateLink) for (const x2 of this.mains) if (!x2.dead && x2.team !== t.team) this.damage(x2, amt * 0.3, null, { link: true, noStop: true, color: '#ff8fab' });
+      if (tm.portal && !(t.portalCd > this.t)) { t.portalCd = this.t + 2.5; const L = this.margin + t.r, R = SIZE - this.margin - t.r, nx = rand(L, R), ny = rand(L, R); this.fx.push({ k: 'blink', x1: t.x, y1: t.y, x2: nx, y2: ny, c: '#cdbfff', life: 0.3, max: 0.3 }); t.x = nx; t.y = ny; }
+      if (tm.tumbler && this.t < 20 && t.hp < 1) t.hp = 1;
+      if (tm.lifebuoy && !t.lb && t.hp > 0 && t.hp < t.maxHp * 0.2) { t.lb = 1; t.barrier += 40; this.text(t.x, t.y - t.r - 14, '救生圈', '#8fe9ff', 16); }
+      if (tm.revenge && !t.rv && t.hp > 0 && t.hp < t.maxHp * 0.5) { t.rv = 1; this.ring(t.x, t.y, 160, '#e5484d', 0.5); this.text(t.x, t.y - t.r - 14, '復仇！', '#e5484d', 18); for (const x2 of this.enemies(t)) this.damage(x2, 15, null, { link: true, noStop: true, knock: 400, kx: (x2.x - t.x) / (Math.hypot(x2.x - t.x, x2.y - t.y) || 1), ky: (x2.y - t.y) / (Math.hypot(x2.x - t.x, x2.y - t.y) || 1) }); }
     }
     if (tm.rage) t.rage = Math.min(2, t.rage + tm.rage);
     if (tm.fatigue) t.spdMul = Math.max(0.4, t.spdMul * (1 - tm.fatigue));
@@ -598,6 +647,7 @@ class World {
       if (odd((this.invActive(t) ? 1 : 0) + t.mod.invDot)) { t.hp = Math.min(t.maxHp, t.hp + amt); return; }
     }
     t.hp -= amt; t.dotAcc += amt;
+    if (t.mod.tumbler && this.t < 20 && t.hp < 1) t.hp = 1;
     if (t.dotT <= 0 && t.dotAcc >= 1) { this.text(t.x + rand(-14, 14), t.y - t.r, fmt(t.dotAcc), color || '#b9f27c', 12); t.dotAcc = 0; t.dotT = 0.45; }
     if (t.hp <= 0) this.kill(t, null);
   }
@@ -610,7 +660,11 @@ class World {
       this.text(t.x, t.y - t.r - 10, full ? '涅槃！' : '復活！', '#ffcf3f', 24); this.ring(t.x, t.y, 90, '#ffcf3f', 0.6); this.ev({ k: 'revive' });
       return;
     }
+    if (!t.minion && t.mod.rewind && !t.rewound && t.hist && t.hist.length) {
+      t.rewound = 1; t.hp = Math.max(20, t.hist[0][1]); t.inv = 1; this.text(t.x, t.y - t.r - 10, '時光倒流！', '#80deea', 22); this.ring(t.x, t.y, 90, '#80deea', 0.6); return;
+    }
     t.dead = true; t.hp = 0;
+    if (!t.minion && t.mod.lastWill && src) { const k = this.owner(src); if (k && !k.dead) { this.addPoison(k, 10); this.text(k.x, k.y - k.r - 12, '遺言：中毒', '#9be35a', 15); } }
     if (!t.minion) {
       this.burst(t.x, t.y, t.color, 40); this.ring(t.x, t.y, 120, t.color, 0.7);
       this.shake = 20; this.hitstop = 0.35; this.ev({ k: 'kill' });
@@ -629,13 +683,14 @@ class World {
     } else { this.burst(t.x, t.y, t.color, 8); }
   }
   contact(a, e) {
-    const d = a.def;
-    if (!d.contact && !a.contactDmg) return;
+    const d = a.def, extra = a.minion ? 0 : (a.mod.spikes || 0);
+    if (!d.contact && !a.contactDmg && !extra) return;
     if (this.t < (a.cc.get(e.id) || 0)) return;
-    const dmg = d.contact ? d.contact(a, e, this) : a.contactDmg;
+    const dmg = (d.contact ? d.contact(a, e, this) : a.contactDmg) + extra;
     if (dmg <= 0) return;
     a.cc.set(e.id, this.t + (d.contactCd || 0.5));
-    const ok = this.damage(e, dmg, a, { knock: 160 });
+    const ok = this.damage(e, dmg, a, { knock: 160 * (a.mod.ironHead ? 3 : 1), melee: true });
+    if (ok && a.mod.sticky) this.addChill(e, 0.15, true);
     if (ok && d.onContact) this.grow(this.owner(a), () => d.onContact(a, e, this));
     if (a.minion) { a.hp -= 2.5; if (a.hp <= 0) this.kill(a, null); }
   }
@@ -655,6 +710,41 @@ class World {
       if (m.slowAura && d < 120 + e.r) this.addChill(e, m.slowAura * dt, true);
       if (m.magnet && d < 320) steer(e, b.x, b.y, m.magnet, dt);
     }
+    const T = (k, p, fn, first) => { b['_t' + k] = (b['_t' + k] ?? (first ?? p)) - dt; if (b['_t' + k] <= 0) { b['_t' + k] = p; fn(); } };
+    const once = (k, at, fn) => { if (!b['_o' + k] && this.t >= at) { b['_o' + k] = 1; fn(); } };
+    const near = (R, f) => { for (const e of this.balls) { if (e.dead || e.team === b.team) continue; const d = Math.hypot(e.x - b.x, e.y - b.y); if (d < R + e.r) f(e, d); } };
+    if (m.fireTrail) T('ft', 0.1, () => this.hazard({ kind: 'fire', x: b.x, y: b.y, r: 13, life: 2, team: b.team, owner: b, touch(h, e, w) { if (e.fireCd > 0) return; e.fireCd = 0.45; w.addBurn(e, 1); } }));
+    if (m.poisonTrail) T('pt', 0.5, () => this.hazard({ kind: 'poison', x: b.x, y: b.y, r: 20, life: 4, team: b.team, owner: b, touch(h, e, w) { if (e.poisonCd > 0) return; e.poisonCd = 0.5; w.addPoison(e, 1); } }));
+    if (m.thornTrail) T('tt', 0.35, () => this.hazard({ kind: 'zone', x: b.x, y: b.y, r: 11, life: 4, team: b.team, owner: b, color: '#6d8b74', hc: new Map(), touch(h, e, w) { if (w.t < (h.hc.get(e.id) || 0)) return; h.hc.set(e.id, w.t + 0.6); w.damage(e, 1, null, { noStop: true, color: '#9ccc65' }); } }));
+    if (m.mineDrop) T('md', 3, () => this.hazard({ kind: 'mine', x: b.x, y: b.y, r: 8, life: 14, team: b.team, owner: b, arm: 0.7, update(h, w, dt) { h.arm -= dt; }, touch(h, e, w) { if (h.arm > 0 || h.dead) return; h.dead = true; w.ring(h.x, h.y, 55, '#ffb74d', 0.4); w.ev({ k: 'boom' }); aoe(w, h.owner, h.x, h.y, 50, 5, { knock: 380 }); } }));
+    if (m.staticZap) T('sz', 3, () => { const e = this.nearest(b); if (e && Math.hypot(e.x - b.x, e.y - b.y) < 240) { this.fx.push({ k: 'bolt', pts: zigzag(b.x, b.y, e.x, e.y, 6), c: '#fff3a0', life: 0.22, max: 0.22 }); this.damage(e, 4, b, { knock: 150, color: '#fff3a0' }); this.ev({ k: 'zap' }); } });
+    if (m.missiles) T('ms', 2.5, () => fireBullet(this, b, rand(0, TAU), { kind: 'missile', speed: 300, dmg: 2, r: 5, life: 3, color: '#ffb3c7', bounces: 2, update(p, W, dt) { const e = W.nearest(p.owner); if (!e) return; steer(p, e.x, e.y, 900, dt); const sp = Math.hypot(p.vx, p.vy); if (sp > 400) { p.vx *= 400 / sp; p.vy *= 400 / sp; } } }));
+    if (m.quake) T('qk', 6, () => { this.ring(b.x, b.y, 120, '#a1887f', 0.4); this.shake = Math.max(this.shake, 6); aoe(this, b, b.x, b.y, 120, 5, { knock: 350, noStop: true }); });
+    if (m.curseAura) near(120, e => this.dot(e, m.curseAura * dt, '#b38cff'));
+    if (m.repel) near(150, (e, d) => { e.vx += (e.x - b.x) / (d || 1) * 400 * dt; e.vy += (e.y - b.y) / (d || 1) * 400 * dt; });
+    if (m.taunt) near(400, e => steer(e, b.x, b.y, 160, dt));
+    if (m.coward) { const e = this.nearest(b, true); if (e) steer(b, 2 * b.x - e.x, 2 * b.y - e.y, 260, dt); }
+    if (m.growT) T('gr', 5, () => { if (b.r < 60) { b.r *= 1.04; b.mass = b.r * b.r / 784 * m.mass; } });
+    if (m.shrinkT) T('sh', 5, () => { if (b.r > 12) { b.r *= 0.96; b.mass = b.r * b.r / 784 * m.mass; } });
+    if (m.star) T('st', 15, () => { b.inv = Math.max(b.inv, 3); this.text(b.x, b.y - b.r - 14, '無敵星星', '#ffe45c', 16); });
+    if (m.phase) T('ph', 5, () => { b.ghost = Math.max(b.ghost, 1); });
+    if (m.drunk) T('dr', 1, () => { const a = Math.atan2(b.vy, b.vx) + rand(-1.6, 1.6), sp = Math.hypot(b.vx, b.vy); b.vx = Math.cos(a) * sp; b.vy = Math.sin(a) * sp; });
+    if (m.timeStop) once('ts', 20, () => { this.text(b.x, b.y - b.r - 14, '時間暫停！', '#80deea', 20); for (const e of this.enemies(b)) e.frozen = Math.max(e.frozen, 2); this.ring(b.x, b.y, 300, '#80deea', 0.6); });
+    if (m.evolve) once('ev', 30, () => { b.hp = b.maxHp; m.dmgOut *= 1.5; this.text(b.x, b.y - b.r - 14, '進化！', '#7dffa8', 20); this.ring(b.x, b.y, 80, '#7dffa8', 0.6); });
+    if (m.devolve) once('dv', 30, () => { m.dmgOut *= 0.5; this.text(b.x, b.y - b.r - 14, '退化…', '#9aa3b5', 18); });
+    if (m.heartbeat) T('hb', 10, () => this.heal(b, b.maxHp * 0.1, true));
+    if (m.seed) once('sd', 25, () => { b.maxHp += 40; this.heal(b, 40, true); this.text(b.x, b.y - b.r - 14, '發芽！', '#7dffa8', 18); });
+    if (m.supernova) once('sn', 45, () => { this.ring(b.x, b.y, 400, '#ffd23f', 0.8); this.shake = 18; this.ev({ k: 'boom' }); for (const e of this.enemies(b)) this.damage(e, 25, null, { noStop: true, color: '#ffd23f' }); });
+    if (m.meteor) for (const at of [10, 20, 30]) once('mt' + at, at, () => { const es = this.mains.filter(e => !e.dead && e.team !== b.team), e = es[(Math.random() * es.length) | 0]; if (e) { this.ring(e.x, e.y, 70, '#ff6a3d', 0.5); this.ev({ k: 'boom' }); this.damage(e, 8, null, { knock: 300, kx: 0, ky: 1, color: '#ff9b3d' }); } });
+    if (m.smite) once('sm', 20, () => { this.fx.push({ k: 'bolt', pts: zigzag(b.x, 0, b.x, b.y, 6), c: '#fff3a0', life: 0.3, max: 0.3 }); this.dot(b, 20, '#fff3a0'); this.text(b.x, b.y - b.r - 14, '天譴', '#e5484d', 18); });
+    if (m.storm) T('sr', 5, () => { if (Math.random() < 0.3) { this.fx.push({ k: 'bolt', pts: zigzag(b.x, 0, b.x, b.y, 6), c: '#fff3a0', life: 0.3, max: 0.3 }); this.dot(b, 6, '#fff3a0'); this.ev({ k: 'zap' }); } });
+    if (m.dash) T('ds', 4, () => { const e = this.nearest(b, true); if (e) { const a = angTo(b, e), sp = Math.max(500, b.speed * 2.5); b.vx = Math.cos(a) * sp; b.vy = Math.sin(a) * sp; } });
+    if (m.chaosAura) T('ca', 2, () => near(150, e => { for (const w of e.weapons) if (w.kind !== 'arc' && Math.random() < 0.5) w.dir *= -1; }));
+    if (m.blindAura || m.bulletTime) for (const p of this.proj) { if (p.team === b.team) continue; const d = Math.hypot(p.x - b.x, p.y - b.y); if (d > 140) continue; if (m.bulletTime && Math.hypot(p.vx, p.vy) > 120) { p.vx *= 1 - 2.5 * dt; p.vy *= 1 - 2.5 * dt; } if (m.blindAura) { const a = Math.atan2(p.vy, p.vx) + rand(-6, 6) * dt, sp = Math.hypot(p.vx, p.vy); p.vx = Math.cos(a) * sp; p.vy = Math.sin(a) * sp; } }
+    if (m.projMagnet) for (const p of this.proj) { if (p.team === b.team) continue; if (Math.hypot(p.x - b.x, p.y - b.y) < 300) steer(p, b.x, b.y, 700, dt); }
+    if (m.rewind) { (b.hist = b.hist || []).push([this.t, b.hp]); while (b.hist.length > 1 && b.hist[0][0] < this.t - 5) b.hist.shift(); }
+    if (m.fumbleAura) near(150, e => { e.jinx = 0.15; });
+    for (const w of b.weapons) if (w.track) { const e = this.nearest(b); if (e) w.a = turnToward(w.a, angTo(b, e), w.track * dt); }
     if (m.confuse) { b.confT = (b.confT ?? 2) - dt; if (b.confT <= 0) { b.confT = 2; for (const w of b.weapons) if (w.kind !== 'arc' && Math.random() < 0.6) w.dir *= -1; } }
   }
   buildCircles(b) {
@@ -723,9 +813,11 @@ class World {
       }
       if (this.t > OT + 20 && !b.minion) this.dot(b, (this.t - OT - 20) * 0.5 * dt, '#ff5d73', true);
       if (b.dead) continue;
-      if (b.frozen <= 0) {
-        const rt = b.mod.rate;
+      if (b.silence > 0) b.silence -= dt;
+      if (b.frozen <= 0 && !(b.silence > 0)) {
+        const rt = b.mod.rate * (b.mod.overcharge ? (this.t < 10 ? 2 : 0.6) : 1);
         b.def.update && b.def.update(b, this, dt * rt);
+        if (b.minion) for (const w of b.weapons) if (w.track) { const e = this.nearest(b); if (e) w.a = turnToward(w.a, angTo(b, e), w.track * dt); }
         if (b.homing) { const e = this.nearest(b); if (e) steer(b, e.x, e.y, b.homing, dt); }
         else if (!b.minion && this.pull) { const e = this.nearest(b, true); if (e) steer(b, e.x, e.y, this.pull, dt); }
         for (const w of b.weapons) w.a += w.spin * w.dir * dt * rt * (1 - b.chill * 0.6);
@@ -747,7 +839,7 @@ class World {
       if (b.x + b.r > R) { b.x = R - b.r; b.vx = -Math.abs(b.vx); hit = true; }
       if (b.y - b.r < L) { b.y = L + b.r; b.vy = Math.abs(b.vy); hit = true; }
       if (b.y + b.r > R) { b.y = R - b.r; b.vy = -Math.abs(b.vy); if (this.gravity) b.vy = -Math.max(Math.abs(b.vy), 520); hit = true; }
-      if (hit && b.wallCd <= 0) { b.wallCd = 0.08; b.def.onWall && b.def.onWall(b, this); if (b.mod.wallHeal) this.heal(b, b.mod.wallHeal, true); if (b.mod.wallDmg) this.dot(b, b.mod.wallDmg, '#ff5d73'); if (!b.minion) this.ev({ k: 'wall', id: b.id }); }
+      if (hit && b.wallCd <= 0) { b.wallCd = 0.08; b.def.onWall && b.def.onWall(b, this); if (b.mod.wallHeal) this.heal(b, b.mod.wallHeal, true); if (b.mod.wallDmg) this.dot(b, b.mod.wallDmg, '#ff5d73'); if (b.mod.bouncy) b.spdMul = Math.min(2, b.spdMul * 1.04); if (b.mod.boomWall && !(b.bwCd > this.t)) { b.bwCd = this.t + 0.5; this.ring(b.x, b.y, 60, '#ff9b3d', 0.3); aoe(this, b, b.x, b.y, 60, 3, { knock: 250, noStop: true }); } if (!b.minion) this.ev({ k: 'wall', id: b.id }); }
     }
     // ball-ball
     for (let i = 0; i < balls.length; i++) {
@@ -763,7 +855,7 @@ class World {
         b.x += nx * ov * ma / (ma + mb); b.y += ny * ov * ma / (ma + mb);
         const rel = (b.vx - a.vx) * nx + (b.vy - a.vy) * ny;
         if (rel < 0) { const jj = -2 * rel / (1 / ma + 1 / mb); a.vx -= jj / ma * nx; a.vy -= jj / ma * ny; b.vx += jj / mb * nx; b.vy += jj / mb * ny; }
-        if (a.team !== b.team) { this.contact(a, b); this.contact(b, a); if (!a.minion && !b.minion) this.ev({ k: 'bump' }); }
+        if (a.team !== b.team) { if (a.mod.sticky) this.addChill(b, 0.12, true); if (b.mod.sticky) this.addChill(a, 0.12, true); this.contact(a, b); this.contact(b, a); if (!a.minion && !b.minion) this.ev({ k: 'bump' }); }
       }
     }
     // weapons
@@ -779,7 +871,7 @@ class World {
           if (Math.hypot(c.x - e.x, c.y - e.y) < c.r + e.r) {
             w.hitCd.set(e.id, this.t + w.cd);
             const cr = w.critC && Math.random() < w.critC ? w.critM : 0;
-            const ok = this.damage(e, w.dmg, b, { knock: w.knock, crit: cr });
+            const ok = this.damage(e, w.dmg, b, { knock: w.knock, crit: cr, melee: true });
             if (ok) { this.spark(c.x, c.y, '#fff', 8); if (b.def.onHit) this.grow(this.owner(b), () => b.def.onHit(b, e, w, this)); }
             break;
           }
@@ -849,7 +941,7 @@ class World {
           }
           p.hit.add(e.id);
           const sp = Math.hypot(p.vx, p.vy) || 1;
-          const ok = this.damage(e, p.dmg, p.owner, { knock: p.knock, kx: p.vx / sp, ky: p.vy / sp, color: p.tc });
+          const ok = this.damage(e, p.dmg, p.owner, { knock: p.knock, kx: p.vx / sp, ky: p.vy / sp, color: p.tc, proj: true });
           if (ok && p.owner === p.src && !p.src.dead && p.src.def.onProjHit) this.grow(p.src, () => p.src.def.onProjHit(p.src, e, p, this));
           if (ok && p.onHit) p.onHit(p, e, this);
           if (!p.pierce) { p.dead = true; break; }
@@ -1296,6 +1388,278 @@ defFighter({ key: 'dice', name: '骰子', glyph: '骰', color: '#ec8f5e', speed:
   }, stat: b => '上次 ' + b.s.last });
 function setTimeoutSafe(b, k, t) { b.s[k] = t; }
 
+
+// ---------- FIGHTERS 51-100 (v3) ----------
+function zone(w, b, o) { return w.hazard(Object.assign({ kind: 'zone', x: b.x, y: b.y, r: 24, life: 4, team: b.team, owner: b, color: b.color, hc: new Map() }, o)); }
+function zoneHit(h, e, w, cd) { if (w.t < (h.hc.get(e.id) || 0)) return false; h.hc.set(e.id, w.t + cd); return true; }
+function explodeAt(w, owner, x, y, R, dmg, color) { w.ring(x, y, R, color || '#ff9b3d', 0.35); w.burst(x, y, color || '#ff9800', 10); w.ev({ k: 'boom' }); return aoe(w, owner, x, y, R, dmg, { knock: 350, noStop: true, color: '#ffcc80' }); }
+defFighter({ key: 'droneUnit', hidden: true, name: '無人機', glyph: '', color: '#adb5bd', speed: 230, contactCd: 0.8,
+  update(b, w, dt) { every(b, 'cd', dt, 1.1, () => { const e = w.nearest(b); if (e) fireBullet(w, b, angTo(b, e), { speed: 520, dmg: 1.5, r: 3, color: '#e9ecef' }); }); } });
+
+defFighter({ key: 'painter', name: '畫家', glyph: '筆', color: '#e76f51', speed: 230, desc: '沿路畫出顏料，踩到的敵人會變慢並受傷。每次沾到敵人，顏料範圍變大。',
+  init(b) { b.s.pr = 18; },
+  update(b, w, dt) { every(b, 'pt', dt, 0.18, () => zone(w, b, { r: b.s.pr, life: 3.5, color: b.color, touch(h, e, W) { if (!zoneHit(h, e, W, 0.4)) return; W.addChill(e, 0.08, true); if (W.damage(e, 0.8, h.owner, { noStop: true, color: '#f4a261' }) && !h.owner.dead) h.owner.s.pr = Math.min(40, h.owner.s.pr + 0.5); } })); },
+  stat: b => '顏料 ' + Math.round(b.s.pr) });
+
+defFighter({ key: 'ninja', name: '忍者', glyph: '忍', color: '#3d405b', speed: 250, hp: 90, desc: '一次丟出多枚會反彈的手裡劍。每命中 4 次，多一枚。',
+  init(b) { b.s.n = 3; b.s.h = 0; },
+  update(b, w, dt) { b.s.cd = (b.s.cd ?? 0.6) - dt; if (b.s.cd > 0) return; const e = w.nearest(b); if (!e) return; b.s.cd = 1.2; const base = angTo(b, e), n = b.s.n;
+    for (let i = 0; i < n; i++) fireBullet(w, b, base + (i - (n - 1) / 2) * 0.22, { kind: 'star', speed: 480, dmg: 1.2, r: 6, bounces: 1, life: 2, color: '#adb5bd', spin: 0, update(p, W, dt) { p.spin += dt * 25; } }); w.ev({ k: 'shoot' }); },
+  onProjHit(b) { b.s.h++; if (b.s.h % 4 === 0) b.s.n = Math.min(9, b.s.n + 1); }, stat: b => '手裡劍 ' + b.s.n });
+
+defFighter({ key: 'monk', name: '武僧', glyph: '僧', color: '#e9c46a', speed: 250, desc: '赤手空拳追著敵人打，3 秒內連續打中會累積連擊，越打越痛。',
+  init(b) { b.s.combo = 0; b.s.last = -9; b.homing = 300; }, contactCd: 0.35,
+  contact(b, e, w) { if (w.t - b.s.last > 3) b.s.combo = 0; return 1.5 + b.s.combo; },
+  onContact(b, e, w) { b.s.combo = Math.min(10, b.s.combo + 1); b.s.last = w.t; if (b.s.combo >= 3) w.text(b.x, b.y - b.r - 12, b.s.combo + ' 連擊', '#e76f51', 14); },
+  stat: b => '連擊 ' + b.s.combo });
+
+defFighter({ key: 'pirate', name: '海盜', glyph: '盜', color: '#264653', speed: 220, desc: '揮彎刀，還會射出鉤子把敵人拉過來。每次鉤中，彎刀傷害 +1。',
+  init(b) { b.weapons.push(weapon({ kind: 'blade', look: 'sword', len: 44, width: 7, spin: 4.5, dmg: 2, cd: 0.35, knock: 160 })); },
+  update(b, w, dt) { every(b, 'cd', dt, 3, () => { const e = w.nearest(b, true); if (!e) return; fireBullet(w, b, angTo(b, e), { kind: 'bullet', speed: 650, dmg: 3, r: 6, life: 1, color: '#6c757d', onHit(p, t, W) { const d = Math.hypot(b.x - t.x, b.y - t.y) || 1; t.vx = (b.x - t.x) / d * 700; t.vy = (b.y - t.y) / d * 700; if (b.weapons[0]) b.weapons[0].dmg += 1; } }); w.ev({ k: 'shoot' }); }); },
+  stat: b => '彎刀 ' + (b.weapons[0] ? b.weapons[0].dmg : 0) });
+
+defFighter({ key: 'crystal', name: '水晶', glyph: '晶', color: '#9b5de5', speed: 210, desc: '三顆水晶環繞身邊，敵人靠近時各自射出晶片。每命中 4 次，晶片傷害 +0.5。',
+  init(b) { b.s.dmg = 1.2; b.s.h = 0; b.weapons.push(weapon({ kind: 'orbs', look: 'orbs', n: 3, off: 30, orbR: 8, spin: 2.5, dmg: 1, cd: 0.3, knock: 100 })); },
+  update(b, w, dt) { every(b, 'cd', dt, 1.5, () => { const e = w.nearest(b); if (!e || Math.hypot(e.x - b.x, e.y - b.y) > 230) return; const wp = b.weapons[0]; for (let i = 0; i < wp.n; i++) { const an = wp.a + i * TAU / wp.n, x = b.x + Math.cos(an) * (b.r + wp.off), y = b.y + Math.sin(an) * (b.r + wp.off); w.shoot({ kind: 'shard', x, y, vx: (e.x - x) / Math.hypot(e.x - x, e.y - y) * 500, vy: (e.y - y) / Math.hypot(e.x - x, e.y - y) * 500, r: 4, dmg: b.s.dmg, team: b.team, owner: b, color: '#e0c3fc', life: 1.5 }); } }); },
+  onProjHit(b) { b.s.h++; if (b.s.h % 4 === 0) b.s.dmg += 0.5; }, stat: b => '晶片 ' + fmt(b.s.dmg) });
+
+defFighter({ key: 'idol', name: '偶像', glyph: '歌', color: '#ff70a6', speed: 220, hp: 95, desc: '唱出會追人的音符，打中會讓敵人陶醉變慢，自己回血。每命中 4 次，多一個音符。',
+  init(b) { b.s.n = 1; b.s.h = 0; },
+  update(b, w, dt) { every(b, 'cd', dt, 1.8, () => { for (let i = 0; i < b.s.n; i++) fireBullet(w, b, rand(0, TAU), { kind: 'note', speed: 250, dmg: 1, r: 6, life: 3, bounces: 3, color: '#ff70a6', update(p, W, dt) { const e = W.nearest(p.owner); if (e) steer(p, e.x, e.y, 600, dt); const sp = Math.hypot(p.vx, p.vy); if (sp > 330) { p.vx *= 330 / sp; p.vy *= 330 / sp; } } }); w.ev({ k: 'summon' }); }); },
+  onProjHit(b, e, p, w) { w.addChill(e, 0.05, true); w.heal(b, 0.5); b.s.h++; if (b.s.h % 4 === 0) b.s.n = Math.min(7, b.s.n + 1); }, stat: b => '音符 ' + b.s.n });
+
+defFighter({ key: 'alchemist', name: '煉金術士', glyph: '煉', color: '#8ac926', speed: 215, desc: '亂丟藥水，碎掉的地方變成火海、毒池或冰地。',
+  update(b, w, dt) { every(b, 'cd', dt, 1.4, () => { const e = w.nearest(b); if (!e) return; const type = (Math.random() * 3) | 0, col = ['#ff7a1a', '#8bc34a', '#6ec6ff'][type];
+    const pot = fireBullet(w, b, angTo(b, e) + rand(-0.2, 0.2), { kind: 'ball', speed: 380, dmg: 2, r: 7, life: 0.9, color: col, pierce: false });
+    pot.onHit = (p, t, W) => spill(W, p); pot.end = 1; pot.type = type;
+    const spill = (W, p) => zone(W, b, { x: p.x, y: p.y, r: 38, life: 4, color: col, touch(h, t, W2) { if (!zoneHit(h, t, W2, 0.5)) return; if (type === 0) W2.addBurn(t, 1); else if (type === 1) W2.addPoison(t, 1); else W2.addChill(t, 0.12); } });
+    pot.update = (p, W) => { if (p.life < 0.02 && !p.sp) { p.sp = 1; spill(W, p); } }; }); },
+  stat: () => '藥水' });
+
+defFighter({ key: 'golem', name: '石像', glyph: '岩', color: '#8d8d8d', speed: 150, hp: 170, r: 36, desc: '又大又硬又慢，撞人很痛，幾乎推不動。每次撞到，傷害 +0.5。',
+  init(b) { b.mass *= 2.5; b.s.dmg = 5; }, contact: b => b.s.dmg, contactCd: 0.6, onContact(b) { b.s.dmg += 0.5; }, stat: b => '傷害 ' + fmt(b.s.dmg) });
+
+defFighter({ key: 'slime', name: '史萊姆', glyph: '黏', color: '#52b788', speed: 210, hp: 110, desc: '被打到會噴出小史萊姆圍攻敵人，小史萊姆回到身上會回血。碰到牠會變慢。',
+  init(b) { b.mod.sticky = 1; b.homing = 150; }, contact: () => 4,
+  onDamaged(b, amt, src, w) { if (amt < 2 || minionCount(w, b) >= 6) return; const m = w.spawn(DEFS.mini, b.team, b.x, b.y, { r: 10, hp: 5, speed: 260, minion: true, master: b, color: '#95d5b2', contactDmg: 2, homing: 380 }); m.s.slime = 1; },
+  update(b, w) { for (const m of w.balls) if (m.master === b && !m.dead && m.s.slime && w.t > (m.s.born ?? (m.s.born = w.t)) + 2 && Math.hypot(m.x - b.x, m.y - b.y) < b.r + m.r) { m.dead = true; w.heal(b, 4, true); } },
+  stat: (b, w) => '小史萊姆 ' + (w ? minionCount(w, b) : 0) });
+
+defFighter({ key: 'spider', name: '蜘蛛', glyph: '蛛', color: '#4a4e69', speed: 225, desc: '吐出蜘蛛網讓敵人寸步難行，咬人會中毒。',
+  contact: () => 2, onContact(b, e, w) { w.addPoison(e, 1); },
+  update(b, w, dt) { every(b, 'cd', dt, 2, () => { const e = w.nearest(b); if (!e) return; const p = fireBullet(w, b, angTo(b, e), { kind: 'bullet', speed: 420, dmg: 1, r: 5, life: 1.2, color: '#e9ecef' }); p.onHit = (pp, t, W) => web(W, pp.x, pp.y); p.update = (pp, W) => { if (pp.life < 0.02 && !pp.sp) { pp.sp = 1; web(W, pp.x, pp.y); } }; }); const web = (W, x, y) => zone(W, b, { x, y, r: 40, life: 5, color: '#ced4da', touch(h, t, W2) { if (zoneHit(h, t, W2, 0.3)) W2.addChill(t, 0.15, true); } }); },
+  stat: () => '蛛網' });
+
+defFighter({ key: 'phoenix', name: '鳳凰', glyph: '凰', color: '#f77f00', speed: 230, hp: 85, immBurn: true, desc: '拖著火焰飛行，倒下後會浴火重生一次並爆出火焰。',
+  init(b) { b.mod.revive += 1; b.s.t = 0; b.homing = 100; },
+  update(b, w, dt) { every(b, 'ft', dt, 0.12, () => w.hazard({ kind: 'fire', x: b.x, y: b.y, r: 13, life: 1.6, team: b.team, owner: b, touch(h, e, W) { if (e.fireCd > 0) return; e.fireCd = 0.45; W.addBurn(e, 1); } })); if (b.inv > 0 && !b.s.reborn && b.mod.revive === 0) { b.s.reborn = 1; explodeAt(w, b, b.x, b.y, 130, 10, '#f77f00'); for (const e of w.enemies(b)) if (Math.hypot(e.x - b.x, e.y - b.y) < 140) w.addBurn(e, 5); } },
+  contact: () => 3, stat: b => b.s.reborn ? '已重生' : '可重生' });
+
+defFighter({ key: 'executioner', name: '劊子手', glyph: '斬', color: '#6a040f', speed: 195, hp: 110, desc: '揮動大斧，敵人血越少砍得越痛，追加對方已損失血量 20% 的傷害。',
+  init(b) { b.weapons.push(weapon({ kind: 'blade', look: 'axe', len: 54, width: 7, head: 13, spin: 3.2, dmg: 4, cd: 0.5, knock: 300 })); },
+  onHit(b, e, wp, w) { const extra = (e.maxHp - e.hp) * 0.2; if (extra >= 1 && !e.dead) w.damage(e, extra, b, { noStop: true, color: '#e5484d' }); }, stat: b => '斬殺' });
+
+defFighter({ key: 'clockwork', name: '發條', glyph: '條', color: '#b08968', speed: 140, desc: '每 2 秒在慢速和高速之間切換，高速時撞人超痛。',
+  init(b) { b.s.fast = 0; }, speedOf: b => b.s.fast ? 520 : 140,
+  update(b, w, dt) { every(b, 'cd', dt, 2, () => { b.s.fast = 1 - b.s.fast; if (b.s.fast) { const e = w.nearest(b, true); if (e) { const a = angTo(b, e); b.vx = Math.cos(a) * 520; b.vy = Math.sin(a) * 520; } } }); },
+  contact: b => b.s.fast ? 6 : 1, contactCd: 0.4, aura: b => b.s.fast ? [b.r + 8, '#b08968'] : null, stat: b => b.s.fast ? '高速' : '上發條' });
+
+defFighter({ key: 'bumper', name: '彈珠台', glyph: '彈', color: '#ff006e', speed: 260, desc: '撞到敵人會把對方狠狠彈飛。每撞一次，傷害 +0.5。',
+  init(b) { b.s.dmg = 2; b.homing = 180; }, contact: b => b.s.dmg, contactCd: 0.3,
+  onContact(b, e) { const d = Math.hypot(e.x - b.x, e.y - b.y) || 1; e.vx += (e.x - b.x) / d * 800 / e.mass; e.vy += (e.y - b.y) / d * 800 / e.mass; b.s.dmg += 0.5; }, stat: b => '傷害 ' + fmt(b.s.dmg) });
+
+defFighter({ key: 'hero', name: '勇者', glyph: '勇', color: '#3a86ff', speed: 220, desc: '持劍的勇者，每 5 秒放出一次聖光斬，打到周圍所有敵人。每次命中，劍傷害 +0.5。',
+  init(b) { b.weapons.push(weapon({ kind: 'blade', look: 'sword', len: 62, width: 7, spin: 4.4, dmg: 2, cd: 0.35, knock: 180 })); },
+  update(b, w, dt) { every(b, 'cd', dt, 4, () => { w.ring(b.x, b.y, 100, '#ffe45c', 0.4); w.fx.push({ k: 'slash', x: b.x, y: b.y, a: rand(0, TAU), r: 90, c: '#ffe45c', life: 0.3, max: 0.3 }); aoe(w, b, b.x, b.y, 100, 8, { knock: 300, color: '#ffe45c' }); }); },
+  onHit(b, e, wp) { wp.dmg += 0.5; }, stat: b => '劍 ' + fmt(b.weapons[0].dmg) });
+
+defFighter({ key: 'batswarm', name: '蝙蝠群', glyph: '蝠', color: '#2b2d42', speed: 225, hp: 90, desc: '一群蝙蝠圍著飛，咬到敵人就幫主人吸血。每咬 3 次，多一隻。',
+  init(b) { b.weapons.push(weapon({ kind: 'orbs', look: 'orbs', n: 3, off: 26, orbR: 6, spin: 5, dmg: 1.2, cd: 0.2, knock: 60 })); },
+  onHit(b, e, wp, w) { w.heal(b, 0.8); wp.h = (wp.h || 0) + 1; if (wp.h % 3 === 0) wp.n = Math.min(10, wp.n + 1); }, stat: b => '蝙蝠 ' + b.weapons[0].n });
+
+defFighter({ key: 'gunslinger', name: '雙槍俠', glyph: '雙', color: '#a0522d', speed: 230, desc: '連開 6 槍再換彈。每命中 6 發，彈匣多一發。',
+  init(b) { b.s.ammo = 6; b.s.mag = 6; b.s.cd = 0.5; b.s.h = 0; },
+  update(b, w, dt) { b.s.cd -= dt; if (b.s.cd > 0) return; const e = w.nearest(b); if (!e) return; if (b.s.ammo <= 0) { b.s.ammo = b.s.mag; b.s.cd = 1.6; return; } b.s.ammo--; b.s.cd = 0.13; fireBullet(w, b, angTo(b, e) + rand(-0.06, 0.06), { speed: 700, dmg: 1.2, r: 3, color: '#ffd166' }); w.ev({ k: 'shoot' }); },
+  onProjHit(b) { b.s.h++; if (b.s.h % 6 === 0) b.s.mag = Math.min(14, b.s.mag + 1); }, stat: b => '彈匣 ' + b.s.mag });
+
+defFighter({ key: 'drone', name: '無人機', glyph: '機', color: '#adb5bd', speed: 210, desc: '放出會自己開槍的無人機，最多 4 台。',
+  update(b, w, dt) { every(b, 'sp', dt, 2.5, () => { if (minionCount(w, b) < 4) { w.spawn(DEFS.droneUnit, b.team, b.x, b.y, { r: 9, hp: 7, speed: 230, minion: true, master: b, color: '#ced4da', homing: 120 }); w.ev({ k: 'summon' }); } }); },
+  contact: () => 2, stat: (b, w) => '無人機 ' + (w ? minionCount(w, b) : 0) });
+
+defFighter({ key: 'magicalgirl', name: '魔法少女', glyph: '魔', color: '#ff99c8', speed: 225, hp: 95, desc: '揮舞魔杖射出會炸開的星星。每 10 秒變身一次，短暫無敵並回血。',
+  update(b, w, dt) {
+    every(b, 'cd', dt, 1.4, () => { const e = w.nearest(b); if (!e) return; const p = fireBullet(w, b, angTo(b, e), { kind: 'star', speed: 380, dmg: 4, r: 9, life: 1.1, color: '#ffe45c', spin: 0 }); p.update = (pp, W, d) => { pp.spin += d * 10; if (pp.life < 0.03 && !pp.sp) { pp.sp = 1; for (let i = 0; i < 5; i++) fireBullet(W, { x: pp.x, y: pp.y, r: 1, team: b.team, color: '#ffe45c' }, i * TAU / 5, { owner: b, kind: 'star', speed: 300, dmg: 1.5, r: 4, life: 0.6, color: '#fff3a0' }); } }; });
+    every(b, 'tf', dt, 10, () => { b.inv = Math.max(b.inv, 1.5); w.heal(b, 10, true); w.ring(b.x, b.y, 70, '#ff99c8', 0.6); w.text(b.x, b.y - b.r - 14, '變身！', '#ff70a6', 18); });
+  }, stat: () => '魔杖' });
+
+defFighter({ key: 'demonlord', name: '魔王', glyph: '王', color: '#5a189a', speed: 190, hp: 130, r: 32, desc: '黑暗氣場讓附近敵人持續掉血，還會召喚小惡魔，最多 3 隻。',
+  update(b, w, dt) { for (const e of w.balls) { if (e.dead || e.team === b.team) continue; if (Math.hypot(e.x - b.x, e.y - b.y) < 140 + e.r) w.dot(e, 1.2 * dt, '#b38cff'); }
+    every(b, 'sp', dt, 4.5, () => { if (minionCount(w, b) < 3) { w.spawn(DEFS.mini, b.team, b.x, b.y, { r: 11, hp: 8, speed: 270, minion: true, master: b, color: '#9d4edd', contactDmg: 3, homing: 450 }); w.ev({ k: 'summon' }); } }); },
+  aura: () => [140, '#7b2cbf'], stat: (b, w) => '小惡魔 ' + (w ? minionCount(w, b) : 0) });
+
+defFighter({ key: 'druid', name: '德魯伊', glyph: '藤', color: '#2d6a4f', speed: 210, desc: '種下荊棘叢，踩進去的敵人會受傷又被纏住。每刺中一次，荊棘長得更大。',
+  init(b) { b.s.R = 32; },
+  update(b, w, dt) { w.heal(b, 0.4 * dt); every(b, 'cd', dt, 1.6, () => zone(w, b, { r: b.s.R, life: 6, color: '#40916c', touch(h, e, W) { if (!zoneHit(h, e, W, 0.5)) return; W.addChill(e, 0.1, true); if (W.damage(e, 2.5, h.owner, { noStop: true, color: '#95d5b2' }) && !h.owner.dead) h.owner.s.R = Math.min(48, h.owner.s.R + 0.6); } })); },
+  stat: b => '荊棘 ' + Math.round(b.s.R) });
+
+defFighter({ key: 'sun', name: '太陽', glyph: '陽', color: '#ffb703', speed: 200, hp: 110, immBurn: true, desc: '靠近的敵人會被曬到灼燒。每燒到一次，日照範圍變大。',
+  init(b) { b.s.R = 85; },
+  update(b, w, dt) { every(b, 'cd', dt, 0.6, () => { for (const e of w.balls) { if (e.dead || e.team === b.team) continue; if (Math.hypot(e.x - b.x, e.y - b.y) < b.s.R + e.r) { w.addBurn(e, 1); b.s.R = Math.min(150, b.s.R + 2); } } }); },
+  aura: b => [b.s.R, '#ffb703'], stat: b => '日照 ' + Math.round(b.s.R) });
+
+defFighter({ key: 'moon', name: '月亮', glyph: '月', color: '#cdb4db', speed: 200, hp: 110, desc: '一顆大衛星慢慢繞著轉，每 4 秒引發潮汐把敵人拉過來。每次命中，衛星變大。',
+  init(b) { b.s.tide = 0; b.weapons.push(weapon({ kind: 'orbs', look: 'orbs', n: 1, off: 62, orbR: 15, spin: 2.3, dmg: 5, cd: 0.5, knock: 380 })); },
+  update(b, w, dt) { b.s.tide -= dt; every(b, 'cd', dt, 4, () => { b.s.tide = 0.6; w.ring(b.x, b.y, 220, '#cdb4db', 0.5); }); if (b.s.tide > 0) for (const e of w.enemies(b)) steer(e, b.x, b.y, 900, dt); },
+  onHit(b, e, wp) { wp.orbR = Math.min(26, wp.orbR + 1); wp.dmg += 0.3; }, stat: b => '月球 ' + b.weapons[0].orbR });
+
+defFighter({ key: 'comet', name: '彗星', glyph: '彗', color: '#00b4d8', speed: 380, r: 20, hp: 115, desc: '超高速衝來衝去，拖著冰冷的尾巴讓敵人變慢。',
+  init(b) { b.homing = 120; }, contact: () => 5, contactCd: 0.35,
+  update(b, w, dt) { every(b, 'cd', dt, 0.12, () => zone(w, b, { r: 12, life: 1.5, color: '#90e0ef', touch(h, e, W) { if (zoneHit(h, e, W, 0.3)) W.addChill(e, 0.1, true); } })); }, stat: () => '極速' });
+
+defFighter({ key: 'boxer', name: '拳擊手', glyph: '拳', color: '#d62828', speed: 235, desc: '兩隻拳套快速出拳，打中會把人揍飛。每次命中，拳頭傷害 +0.5。',
+  init(b) { const a = rand(0, TAU); for (let i = 0; i < 2; i++) b.weapons.push(weapon({ kind: 'blade', look: 'fist', a: a + i * Math.PI, dir: 1, len: 24, width: 10, head: 9, spin: 7, dmg: 3, cd: 0.35, knock: 600 })); },
+  onHit(b) { for (const w of b.weapons) w.dmg += 0.5; }, onParry(b, wp) { for (const w of b.weapons) w.dir = wp.dir; }, stat: b => '拳 ' + fmt(b.weapons[0].dmg) });
+
+defFighter({ key: 'jester', name: '小丑', glyph: '丑', color: '#ffbe0b', speed: 230, hp: 110, desc: '每 5 秒隨機換一種武器：劍、錘、鞭子或衛星球。',
+  init(b, w) { b.s.n = 0; jesterSwap(b); },
+  update(b, w, dt) { every(b, 'cd', dt, 4, () => { jesterSwap(b); w.text(b.x, b.y - b.r - 14, '換！', '#ffbe0b', 15); }); }, stat: b => '換了 ' + b.s.n + ' 次' });
+function jesterSwap(b) {
+  b.s.n++; const opts = [
+    () => weapon({ kind: 'blade', look: 'sword', len: 68, width: 7, spin: 5, dmg: 4, cd: 0.35, knock: 200 }),
+    () => weapon({ kind: 'blade', look: 'hammer', len: 54, width: 6, head: 15, spin: 3.6, dmg: 9, cd: 0.5, knock: 520 }),
+    () => weapon({ kind: 'blade', look: 'whip', len: 150, width: 3, spin: 6.5, dmg: 2.5, cd: 0.2, knock: 60 }),
+    () => weapon({ kind: 'orbs', look: 'orbs', n: 5, off: 34, orbR: 8, spin: 4.5, dmg: 2.5, cd: 0.2, knock: 120 })];
+  b.weapons = [opts[(Math.random() * opts.length) | 0]()];
+}
+
+defFighter({ key: 'yoyo', name: '溜溜球', glyph: '溜', color: '#06d6a0', speed: 220, hp: 110, desc: '溜溜球一伸一縮地甩出去，伸最長時打最痛。',
+  init(b) { b.weapons.push(weapon({ kind: 'orbs', look: 'flail', n: 1, off: 30, orbR: 14, spin: 5, dmg: 3, cd: 0.35, knock: 300 })); b.s.ph = 0; },
+  update(b, w, dt) { b.s.ph += dt * 2.2; const wp = b.weapons[0]; wp.off = 20 + (Math.sin(b.s.ph) * 0.5 + 0.5) * 110; wp.dmg = Math.round((2.5 + wp.off / 30) * 2) / 2; },
+  stat: b => '長度 ' + Math.round(b.weapons[0].off) });
+
+defFighter({ key: 'lighthouse', name: '燈塔', glyph: '塔', color: '#f4a261', speed: 170, hp: 110, desc: '一道不停旋轉的光束橫掃整個擂台。每照到一次，光束更粗更痛。',
+  init(b) { b.s.aim = rand(0, TAU); b.s.pw = 1.5; b.s.hc = new Map(); b.s.beam = 1; },
+  update(b, w, dt) { b.s.aim += 1.4 * dt; const L = w.margin, R = SIZE - w.margin; b.s.len = rayLen(b.x, b.y, b.s.aim, L, R); const wd = 6 + b.s.pw * 0.8;
+    for (const o of w.balls) { if (o.dead || o.team === b.team) continue; if (w.t < (b.s.hc.get(o.id) || 0)) continue; if (distPointRay(o.x, o.y, b.x, b.y, b.s.aim, b.s.len) < o.r + wd / 2) { b.s.hc.set(o.id, w.t + 0.25); if (w.damage(o, b.s.pw, b, { noStop: true, color: '#ffd166' })) b.s.pw = Math.min(6, b.s.pw + 0.25); } } },
+  stat: b => '光度 ' + b.s.pw.toFixed(1) });
+
+defFighter({ key: 'stormcaller', name: '風暴', glyph: '暴', color: '#48cae4', speed: 215, desc: '不停在敵人附近降下雷擊，地上會先出現警告圈。',
+  update(b, w, dt) { every(b, 'cd', dt, 1.1, () => { const es = w.enemies(b), e = es[(Math.random() * es.length) | 0]; if (!e) return; const x = clamp(e.x + e.vx * 0.5 + rand(-25, 25), w.margin, SIZE - w.margin), y = clamp(e.y + e.vy * 0.5 + rand(-25, 25), w.margin, SIZE - w.margin);
+    w.hazard({ kind: 'warn', x, y, r: 42, life: 0.55, team: b.team, owner: b, color: '#48cae4', end(h, W) { W.fx.push({ k: 'bolt', pts: zigzag(h.x, h.y - 300, h.x, h.y, 7), c: '#fff3a0', life: 0.25, max: 0.25 }); W.ev({ k: 'zap' }); aoe(W, h.owner, h.x, h.y, 42, 4, { knock: 150, noStop: true, color: '#fff3a0' }); } }); }); },
+  stat: () => '雷雲' });
+
+defFighter({ key: 'grenadier', name: '擲彈兵', glyph: '榴', color: '#606c38', speed: 210, desc: '丟出會彈跳的手榴彈，1 秒後爆炸。每炸到一次，爆炸範圍變大。',
+  init(b) { b.s.R = 60; },
+  update(b, w, dt) { every(b, 'cd', dt, 1.5, () => { const e = w.nearest(b); if (!e) return; const p = fireBullet(w, b, angTo(b, e) + rand(-0.2, 0.2), { kind: 'ball', speed: 380, dmg: 1, r: 7, life: 0.8, bounces: 4, color: '#283618' }); p.onHit = (pp) => { pp.life = 0.01; }; p.onBlocked = (pp) => { pp.life = 0.01; pp.vx = pp.vy = 0; }; p.update = (pp, W, d) => { const t = W.nearest(b); if (t) steer(pp, t.x, t.y, 500, d); if (pp.life < 0.03 && !pp.sp) { pp.sp = 1; if (explodeAt(W, b, pp.x, pp.y, b.s.R, 10)) b.s.R = Math.min(130, b.s.R + 5); } }; }); },
+  stat: b => '爆炸 ' + b.s.R });
+
+defFighter({ key: 'twins', name: '雙子', glyph: '子', color: '#ffafcc', speed: 220, hp: 95, desc: '開場帶著一個拿劍的雙胞胎一起戰鬥，兩個都很會砍。',
+  init(b, w) { b.weapons.push(weapon({ kind: 'blade', look: 'sword', len: 50, width: 6, spin: 4.5, dmg: 3, cd: 0.35, knock: 160 })); b.s.spawn = 1; },
+  update(b, w) { if (b.s.spawn) { b.s.spawn = 0; const m = w.spawn(DEFS.mini, b.team, b.x + 20, b.y, { r: 22, hp: 65, speed: 220, minion: true, master: b, color: '#bde0fe', homing: 120 }); m.weapons.push(weapon({ kind: 'blade', look: 'sword', len: 50, width: 6, spin: 4.5, dmg: 3, cd: 0.35, knock: 160 })); } },
+  onHit(b, e, wp) { wp.dmg += 0.5; }, stat: (b, w) => (w && minionCount(w, b)) ? '雙子同在' : '孤單一人' });
+
+defFighter({ key: 'frog', name: '青蛙', glyph: '蛙', color: '#70e000', speed: 230, desc: '吐出長舌頭把敵人捲過來。每次舔中，舌頭更長。',
+  init(b) { b.s.max = 150; b.s.t = 0; b.weapons.push(weapon({ kind: 'blade', look: 'whip', len: 0, width: 5, spin: 0, dmg: 4, cd: 0.6, knock: -500 })); },
+  update(b, w, dt) { const wp = b.weapons[0]; b.s.t -= dt; every(b, 'cd', dt, 1.8, () => { const e = w.nearest(b, true); if (e) { wp.a = angTo(b, e); b.s.t = 0.45; } }); wp.len = b.s.t > 0 ? Math.sin((0.45 - b.s.t) / 0.45 * Math.PI) * b.s.max : 0; wp.dmg = wp.len > 10 ? 5 : 0; },
+  onHit(b) { b.s.max = Math.min(240, b.s.max + 8); }, stat: b => '舌長 ' + b.s.max });
+
+defFighter({ key: 'cactus', name: '仙人掌', glyph: '仙', color: '#2a9d8f', speed: 170, hp: 115, desc: '全身是刺，撞到或打到它都會被刺傷，每 3 秒往四周射刺。',
+  init(b) { b.mod.thorns += 0.3; }, contact: () => 4, contactCd: 0.45,
+  update(b, w, dt) { every(b, 'cd', dt, 3, () => { for (let i = 0; i < 10; i++) fireBullet(w, b, i * TAU / 10, { kind: 'spike', speed: 380, dmg: 1, r: 3, color: '#b7e4c7', life: 1.2 }); }); }, stat: () => '刺' });
+
+defFighter({ key: 'whirlpool', name: '漩渦', glyph: '渦', color: '#0077b6', speed: 210, desc: '在地上捲起漩渦，把敵人吸進中心持續受傷。',
+  update(b, w, dt) { every(b, 'cd', dt, 2.2, () => { const e = w.nearest(b); const x = e ? (e.x + b.x) / 2 : b.x, y = e ? (e.y + b.y) / 2 : b.y; zone(w, b, { x, y, r: 55, life: 4, color: '#0096c7', update(h, W, d) { for (const t of W.balls) { if (t.dead || t.team === h.team) continue; if (Math.hypot(t.x - h.x, t.y - h.y) < h.r + 30) steer(t, h.x, h.y, 600, d); } }, touch(h, t, W) { if (zoneHit(h, t, W, 0.5)) W.damage(t, 1.5, h.owner, { noStop: true, color: '#90e0ef' }); } }); }); },
+  stat: () => '漩渦' });
+
+defFighter({ key: 'archmage', name: '大法師', glyph: '賢', color: '#7209b7', speed: 205, hp: 90, desc: '隨機施放火球、冰霜新星或奧術飛彈三種法術。',
+  update(b, w, dt) { every(b, 'cd', dt, 1.4, () => { const e = w.nearest(b); if (!e) return; const r = (Math.random() * 3) | 0;
+    if (r === 0) { const p = fireBullet(w, b, angTo(b, e), { kind: 'ball', speed: 420, dmg: 3, r: 9, life: 1.5, color: '#ff7a1a' }); p.onHit = (pp, t, W) => explodeAt(W, b, pp.x, pp.y, 55, 3); w.text(b.x, b.y - b.r - 12, '火球', '#ff7a1a', 13); }
+    else if (r === 1) { w.ring(b.x, b.y, 170, '#90e0ef', 0.4); for (const t of w.enemies(b)) if (Math.hypot(t.x - b.x, t.y - b.y) < 170 + t.r) { w.addChill(t, 0.3); w.damage(t, 2, b, { noStop: true, color: '#bfe8ff' }); } w.text(b.x, b.y - b.r - 12, '冰霜新星', '#6ec6ff', 13); }
+    else { for (let i = 0; i < 5; i++) fireBullet(w, b, rand(0, TAU), { kind: 'missile', speed: 300, dmg: 1, r: 4, life: 2.5, color: '#c77dff', bounces: 2, update(p, W, d) { const t = W.nearest(p.owner); if (t) steer(p, t.x, t.y, 1000, d); } }); w.text(b.x, b.y - b.r - 12, '奧術飛彈', '#c77dff', 13); } }); },
+  stat: () => '法術' });
+
+defFighter({ key: 'guardian', name: '守護者', glyph: '守', color: '#457b9d', speed: 200, hp: 110, desc: '三面小盾環繞身邊，會把子彈反彈回去。每擋一次，盾轉得更快。',
+  init(b) { b.weapons.push(weapon({ kind: 'orbs', look: 'shieldorb', n: 3, off: 26, orbR: 11, spin: 2.8, dmg: 3, cd: 0.4, knock: 300, reflect: true })); },
+  onBlock(b) { const wp = b.weapons[0]; wp.spin = Math.min(7, wp.spin + 0.2); }, onParry(b, wp) { wp.spin = Math.min(7, wp.spin + 0.1); }, stat: b => '盾速 ' + b.weapons[0].spin.toFixed(1) });
+
+defFighter({ key: 'shadow', name: '暗影', glyph: '暗', color: '#22223b', speed: 240, hp: 90, desc: '每 2.5 秒留下一個影分身，敵人碰到就會爆炸。',
+  update(b, w, dt) { every(b, 'cd', dt, 2.5, () => { if (minionCount(w, b) >= 5) return; const m = w.spawn(DEFS.mini, b.team, b.x, b.y, { r: 16, hp: 2, speed: 0, minion: true, master: b, color: '#4a4e69', contactDmg: 6 }); m.vx = m.vy = 0; m.speed = 0.01; }); },
+  stat: (b, w) => '影分身 ' + (w ? minionCount(w, b) : 0) });
+
+defFighter({ key: 'eel', name: '電鰻', glyph: '鰻', color: '#4cc9f0', speed: 225, desc: '每秒放電，電到附近所有敵人。每電到一次，放電範圍變大。',
+  init(b) { b.s.R = 140; },
+  update(b, w, dt) { every(b, 'cd', dt, 1, () => { for (const e of w.enemies(b)) if (Math.hypot(e.x - b.x, e.y - b.y) < b.s.R + e.r) { w.fx.push({ k: 'bolt', pts: zigzag(b.x, b.y, e.x, e.y, 4), c: '#4cc9f0', life: 0.15, max: 0.15 }); if (w.damage(e, 3, b, { noStop: true, color: '#bde0fe' })) b.s.R = Math.min(180, b.s.R + 2); } }); },
+  aura: b => [b.s.R, '#4cc9f0'], stat: b => '電場 ' + Math.round(b.s.R) });
+
+defFighter({ key: 'sandman', name: '睡魔', glyph: '眠', color: '#c9ada7', speed: 210, desc: '撒出睡眠沙，被撒到的敵人會睡著一下。',
+  update(b, w, dt) { every(b, 'cd', dt, 3, () => { const e = w.nearest(b); if (!e) return; const base = angTo(b, e); for (let i = 0; i < 6; i++) fireBullet(w, b, base + (i - 2.5) * 0.12, { kind: 'bullet', speed: 340, dmg: 1.5, r: 4, life: 1.2, color: '#f2e9e4', onHit(p, t, W) { if (t.frozen <= 0 && !t.mod.immFreeze) { t.frozen = 1.1; W.text(t.x, t.y - t.r - 10, 'zzZ', '#9a8c98', 14); } } }); }); },
+  contact: () => 2, stat: () => '睡眠沙' });
+
+defFighter({ key: 'maid', name: '女僕', glyph: '侍', color: '#e07a5f', speed: 230, hp: 95, desc: '優雅地連丟飛刀，每 8 秒停下來喝杯茶回血。每命中 7 次，飛刀多一把。',
+  init(b) { b.s.n = 2; b.s.h = 0; },
+  update(b, w, dt) { every(b, 'cd', dt, 1.1, () => { const e = w.nearest(b); if (!e) return; const a = angTo(b, e); for (let i = 0; i < b.s.n; i++) fireBullet(w, b, a + (i - (b.s.n - 1) / 2) * 0.08, { kind: 'spike', speed: 640 - i * 30, dmg: 1.1, r: 3, color: '#e9ecef', life: 1.5 }); w.ev({ k: 'shoot' }); });
+    every(b, 'tea', dt, 8, () => { w.heal(b, 8, true); w.text(b.x, b.y - b.r - 14, '喝茶', '#e07a5f', 14); }); },
+  onProjHit(b) { b.s.h++; if (b.s.h % 7 === 0) b.s.n = Math.min(7, b.s.n + 1); }, stat: b => '飛刀 ' + b.s.n });
+
+defFighter({ key: 'general', name: '將軍', glyph: '將', color: '#9d0208', speed: 195, hp: 105, desc: '派出舉盾的衛兵擋在前面，最多 4 名。',
+  update(b, w, dt) { every(b, 'cd', dt, 4, () => { if (minionCount(w, b) >= 4) return; const m = w.spawn(DEFS.mini, b.team, b.x, b.y, { r: 14, hp: 18, speed: 210, minion: true, master: b, color: '#dc2f02', contactDmg: 2, homing: 260 }); m.weapons.push(weapon({ kind: 'arc', look: 'shield', off: 8, span: 1.6, thick: 7, dmg: 1, knock: 300, cd: 0.5, reflect: true, spin: 0, track: 3 })); w.ev({ k: 'summon' }); }); },
+  contact: () => 2, stat: (b, w) => '衛兵 ' + (w ? minionCount(w, b) : 0) });
+
+defFighter({ key: 'mecha', name: '機甲', glyph: '甲', color: '#495057', speed: 195, hp: 115, desc: '裝甲很硬，射出會飛回來的火箭拳。每打中一次，火箭拳傷害 +1。',
+  init(b) { b.mod.dmgIn *= 0.8; b.s.dmg = 5; b.s.held = true; },
+  update(b, w, dt) { if (!b.s.held) return; every(b, 'cd', dt, 2.4, () => { const e = w.nearest(b, true); if (!e) return; b.s.held = false; const a = angTo(b, e);
+    w.shoot({ kind: 'fist', x: b.x + Math.cos(a) * b.r, y: b.y + Math.sin(a) * b.r, vx: Math.cos(a) * 560, vy: Math.sin(a) * 560, r: 10, dmg: b.s.dmg, pierce: true, life: 6, bounces: 99, knock: 500, team: b.team, owner: b, color: '#adb5bd',
+      update(p, W, d) { const o = p.src; if (o.dead) { p.dead = true; return; } if (!p.ret && p.t > 0.5) { p.ret = true; p.hit.clear(); } if (p.ret) { steer(p, o.x, o.y, 2600, d); const sp = Math.hypot(p.vx, p.vy); if (sp > 700) { p.vx *= 700 / sp; p.vy *= 700 / sp; } if (Math.hypot(o.x - p.x, o.y - p.y) < o.r + 8) { p.dead = true; o.s.held = true; } } },
+      onBlocked(p) { p.ret = true; } }); w.ev({ k: 'shoot' }); }); },
+  onProjHit(b, e, p) { b.s.dmg += 1; p.dmg = b.s.dmg; }, stat: b => '火箭拳 ' + b.s.dmg });
+
+defFighter({ key: 'meteorcaller', name: '隕石術士', glyph: '隕', color: '#e85d04', speed: 205, desc: '在敵人腳下召喚隕石，警告圈出現 1 秒後砸下。每砸中一次，隕石更大。',
+  init(b) { b.s.R = 55; },
+  update(b, w, dt) { every(b, 'cd', dt, 2.4, () => { const e = w.nearest(b, true); if (!e) return; w.hazard({ kind: 'warn', x: clamp(e.x + e.vx * 0.8, w.margin, SIZE - w.margin), y: clamp(e.y + e.vy * 0.8, w.margin, SIZE - w.margin), r: b.s.R, life: 1, team: b.team, owner: b, color: '#e85d04', end(h, W) { W.fx.push({ k: 'ring', x: h.x, y: h.y, r: h.r, c: '#e85d04', life: 0.4, max: 0.4 }); W.shake = Math.max(W.shake, 8); if (explodeAt(W, h.owner, h.x, h.y, h.r, 11, '#e85d04') && !h.owner.dead) h.owner.s.R = Math.min(110, h.owner.s.R + 5); } }); }); },
+  stat: b => '隕石 ' + b.s.R });
+
+defFighter({ key: 'hacker', name: '駭客', glyph: '駭', color: '#38b000', speed: 220, hp: 110, desc: '每 5 秒駭入最近的敵人，讓它 2 秒不能用武器和技能。平常射出病毒彈。',
+  update(b, w, dt) { every(b, 'cd', dt, 5, () => { const e = w.nearest(b, true); if (!e) return; e.silence = 2; w.text(e.x, e.y - e.r - 12, '被駭了', '#38b000', 15); w.fx.push({ k: 'blink', x1: b.x, y1: b.y, x2: e.x, y2: e.y, c: '#38b000', life: 0.4, max: 0.4 }); });
+    every(b, 'sh', dt, 0.6, () => { const e = w.nearest(b); if (e) fireBullet(w, b, angTo(b, e), { speed: 520, dmg: 1.5, r: 3.5, color: '#9ef01a' }); }); },
+  stat: () => '駭入' });
+
+defFighter({ key: 'gamblerF', name: '賭徒', glyph: '賭', color: '#ffd166', speed: 220, desc: '每 3 秒轉一次輪盤：一半機率自己扣 6，一半機率敵人扣 14。',
+  init(b) { b.s.w = 0; b.s.l = 0; },
+  update(b, w, dt) { every(b, 'cd', dt, 3, () => { const e = w.nearest(b, true); if (!e) return; if (Math.random() < 0.5) { b.s.w++; w.fx.push({ k: 'bolt', pts: zigzag(b.x, b.y, e.x, e.y, 5), c: '#ffd166', life: 0.25, max: 0.25 }); w.damage(e, 14, b, { knock: 250, color: '#ffd166' }); w.text(b.x, b.y - b.r - 14, '中了！', '#ffd166', 16); } else { b.s.l++; w.dot(b, 6, '#9aa3b5'); w.text(b.x, b.y - b.r - 14, '槓龜', '#9aa3b5', 15); } }); },
+  stat: b => b.s.w + '勝 ' + b.s.l + '敗' });
+
+defFighter({ key: 'zombie', name: '殭屍', glyph: '屍', color: '#6b705c', speed: 160, hp: 90, desc: '慢吞吞但很耐打，咬到有機會感染中毒，倒下後還會爬起來一次。',
+  init(b) { b.mod.revive += 1; b.homing = 80; }, contact: () => 2.5, contactCd: 0.7, onContact(b, e, w) { if (Math.random() < 0.4) w.addPoison(e, 1); }, stat: b => b.mod.revive ? '還能爬起來' : '最後一條命' });
+
+defFighter({ key: 'trapper', name: '陷阱師', glyph: '阱', color: '#7f5539', speed: 215, desc: '沿路放捕獸夾，夾到的敵人會被夾住 1.5 秒並受傷。',
+  update(b, w, dt) { every(b, 'cd', dt, 1.8, () => { if (w.haz.filter(h => h.kind === 'trap' && h.owner === b).length >= 6) return; w.hazard({ kind: 'trap', x: b.x, y: b.y, r: 12, life: 16, team: b.team, owner: b, arm: 0.6, color: '#7f5539', update(h, W, d) { h.arm -= d; }, touch(h, e, W) { if (h.arm > 0 || h.dead) return; h.dead = true; if (!e.mod.immFreeze) e.frozen = Math.max(e.frozen, 1.5); W.damage(e, 6, h.owner, { color: '#ddb892' }); W.text(e.x, e.y - e.r - 12, '夾住！', '#7f5539', 15); } }); }); },
+  stat: (b, w) => '陷阱 ' + (w ? w.haz.filter(h => h.kind === 'trap' && h.owner === b).length : 0) });
+
+defFighter({ key: 'firework', name: '煙火', glyph: '花', color: '#f15bb5', speed: 220, desc: '發射煙火，飛一段後在空中炸成一圈火花。每命中 4 次，火花更多。',
+  init(b) { b.s.n = 8; b.s.h = 0; },
+  update(b, w, dt) { every(b, 'cd', dt, 1.0, () => { const e = w.nearest(b); if (!e) return; const p = fireBullet(w, b, angTo(b, e), { kind: 'missile', speed: 420, dmg: 3, r: 5, life: 0.6, color: '#f15bb5' }); p.onHit = pp => { pp.dead = false; pp.life = 0.01; pp.pierce = true; }; p.update = (pp, W) => { if (pp.life < 0.03 && !pp.sp) { pp.sp = 1; W.ring(pp.x, pp.y, 30, '#fee440', 0.3); const cols = ['#fee440', '#00bbf9', '#00f5d4', '#f15bb5']; for (let i = 0; i < b.s.n; i++) fireBullet(W, { x: pp.x, y: pp.y, r: 1, team: b.team }, i * TAU / b.s.n, { owner: b, kind: 'bullet', speed: 330, dmg: 1.5, r: 3, life: 0.7, color: cols[i % 4] }); } }; }); },
+  onProjHit(b) { b.s.h++; if (b.s.h % 4 === 0) b.s.n = Math.min(20, b.s.n + 1); }, stat: b => '火花 ' + b.s.n });
+
+defFighter({ key: 'snowman', name: '雪人', glyph: '雪', color: '#90a8c3', speed: 200, hp: 120, desc: '滾出越滾越大的雪球，打中會讓敵人變慢，滾越遠越痛。',
+  update(b, w, dt) { every(b, 'cd', dt, 1.2, () => { const e = w.nearest(b); if (!e) return; fireBullet(w, b, angTo(b, e), { kind: 'ball', speed: 380, dmg: 2, r: 4, life: 3, bounces: 2, color: '#f8f9fa', update(p, W, d) { p.r = Math.min(16, p.r + 8 * d); p.dmg = Math.min(8, p.dmg + 3.5 * d); }, onHit(p, t, W) { W.addChill(t, 0.15); } }); }); },
+  stat: () => '雪球' });
+
+defFighter({ key: 'mimic', name: '模仿者', glyph: '仿', color: '#b5838d', speed: 215, desc: '開戰時隨機變成另一種選手的能力，每場都不一樣。',
+  init(b, w) { const pool = ROSTER.filter(k => k !== 'mimic'); const k = pool[(Math.random() * pool.length) | 0]; b.s.mk = k; const d = DEFS[k]; d.init && d.init(b, w); b.homing = b.homing || 0; },
+  update(b, w, dt) { const d = DEFS[b.s.mk]; d && d.update && d.update(b, w, dt); },
+  onHit(b, e, wp, w) { const d = DEFS[b.s.mk]; d && d.onHit && d.onHit(b, e, wp, w); },
+  onProjHit(b, e, p, w) { const d = DEFS[b.s.mk]; d && d.onProjHit && d.onProjHit(b, e, p, w); },
+  onWall(b, w) { const d = DEFS[b.s.mk]; d && d.onWall && d.onWall(b, w); },
+  onDamaged(b, a, s, w, o) { const d = DEFS[b.s.mk]; d && d.onDamaged && d.onDamaged(b, a, s, w, o); },
+  onParry(b, wp, w) { const d = DEFS[b.s.mk]; d && d.onParry && d.onParry(b, wp, w); },
+  onBlock(b, wp, p, w) { const d = DEFS[b.s.mk]; d && d.onBlock && d.onBlock(b, wp, p, w); },
+  contact(b, e, w) { const d = DEFS[b.s.mk]; return d && d.contact ? d.contact(b, e, w) : 0; },
+  onContact(b, e, w) { const d = DEFS[b.s.mk]; d && d.onContact && d.onContact(b, e, w); },
+  speedOf(b) { const d = DEFS[b.s.mk]; return d && d.speedOf ? d.speedOf(b) : b.speed; },
+  aura(b) { const d = DEFS[b.s.mk]; return d && d.aura ? d.aura(b) : null; },
+  tether(b) { const d = DEFS[b.s.mk]; return d && d.tether ? d.tether(b) : null; },
+  stat: (b, w) => '模仿：' + (DEFS[b.s.mk] ? DEFS[b.s.mk].name : '?') });
+
 // ---------- CARDS (100) ----------
 // kind: buff 增益 / debuff 削弱 / wild 特殊 / flip 正負顛倒;  r: rarity 1 普通 2 稀有 3 傳說
 const CARDS = {};
@@ -1404,11 +1768,174 @@ C('balloon', '氣球', 'wild', 1, '體型 ×1.6、血量 +40，但速度 ×0.8',
 C('deathbomb', '同歸於盡', 'wild', 1, '倒下時爆炸，對周圍敵人造成 30 傷害', m => { m.deathBomb += 30; });
 C('miracle', '奇蹟', 'wild', 2, '15% 機率血量 ×3，否則血量 −10', m => { if (Math.random() < 0.15) m.hpMul *= 3; else m.hp -= 10; });
 C('chaos', '混沌', 'wild', 1, '開戰時隨機變成任何一張牌', null);
+// ---- v3 新卡：戰鬥 76 ----
+C('fireTrail', '火焰之軀', 'buff', 1, '移動時留下火焰軌跡', m => { m.fireTrail = 1; });
+C('poisonTrail', '毒霧行者', 'buff', 1, '沿路留下毒池', m => { m.poisonTrail = 1; });
+C('thornTrail', '荊棘之路', 'buff', 1, '沿路撒下尖刺，踩到的敵人受傷', m => { m.thornTrail = 1; });
+C('mineDrop', '地雷撒布', 'buff', 1, '每 3 秒埋一顆地雷', m => { m.mineDrop = 1; });
+C('staticZap', '雷電護體', 'buff', 1, '每 3 秒電擊附近的敵人 4 點', m => { m.staticZap = 1; });
+C('missiles', '追蹤導彈', 'buff', 1, '每 2.5 秒發射一枚追蹤飛彈', m => { m.missiles = 1; });
+C('addOrb', '環繞之刃', 'buff', 1, '多兩顆環繞身體的衛星球', m => { m.addOrb = (m.addOrb || 0) + 2; });
+C('addSword', '附魔長劍', 'buff', 1, '多一把會旋轉的長劍', m => { m.addSword = (m.addSword || 0) + 1; });
+C('addShield', '守護之盾', 'buff', 1, '多一面會轉向敵人、反彈子彈的盾', m => { m.addShield = 1; });
+C('twin', '雙持', 'buff', 2, '主武器背面再多一把', m => { m.twin = 1; });
+C('longArm', '長臂猿', 'buff', 1, '武器長度 +40%', m => { m.armLen = (m.armLen || 1) * 1.4; });
+C('fastSpin', '風車', 'buff', 1, '武器轉速 ×1.6', m => { m.spinMul = (m.spinMul || 1) * 1.6; });
+C('spikes', '刺甲', 'buff', 1, '撞到敵人也會造成 3 點傷害', m => { m.spikes = (m.spikes || 0) + 3; });
+C('ironHead', '鐵頭功', 'buff', 1, '衝撞傷害 +4，擊退 ×3', m => { m.spikes = (m.spikes || 0) + 4; m.ironHead = 1; });
+C('bouncy', '彈力球', 'buff', 1, '每撞一次牆，速度 +4%', m => { m.bouncy = 1; });
+C('boomWall', '爆炸頭', 'buff', 1, '撞牆時爆炸，附近敵人受 3 點傷害', m => { m.boomWall = 1; });
+C('quakeC', '地牛翻身', 'buff', 1, '每 6 秒放出震波，造成 5 點傷害', m => { m.quake = 1; });
+C('curseAura', '黑魔法光環', 'buff', 1, '靠近的敵人每秒掉 1.5 HP', m => { m.curseAura = (m.curseAura || 0) + 1.5; });
+C('repel', '斥力場', 'buff', 1, '把靠近的敵人推開', m => { m.repel = 1; });
+C('star', '無敵星星', 'buff', 2, '每 15 秒無敵 3 秒', m => { m.star = 1; });
+C('phase', '虛化', 'buff', 1, '每 5 秒變成幽靈 1 秒，攻擊會穿過去', m => { m.phase = 1; });
+C('timeStop', '時間暫停', 'buff', 2, '第 20 秒凍結所有敵人 2 秒', m => { m.timeStop = 1; });
+C('evolve', '進化', 'buff', 2, '第 30 秒回滿血，傷害 ×1.5', m => { m.evolve = 1; });
+C('heartbeat', '心跳', 'buff', 1, '每 10 秒回復 10% 血量', m => { m.heartbeat = 1; });
+C('seed', '重生之種', 'buff', 1, '第 25 秒最大血量 +40，並回血 40', m => { m.seed = 1; });
+C('supernova', '超新星', 'buff', 2, '第 45 秒對所有敵人造成 25 點傷害', m => { m.supernova = 1; });
+C('meteor', '流星雨', 'buff', 1, '第 10、20、30 秒各有隕石砸中一個敵人', m => { m.meteor = 1; });
+C('dash', '突進', 'buff', 1, '每 4 秒朝敵人衝刺', m => { m.dash = 1; });
+C('chaosAura', '混亂光環', 'buff', 1, '靠近的敵人武器會亂轉', m => { m.chaosAura = 1; });
+C('blindAura', '迷霧', 'buff', 1, '飛到身邊的子彈會亂飄', m => { m.blindAura = 1; });
+C('bulletTime', '子彈時間', 'buff', 1, '飛到身邊的子彈會變慢', m => { m.bulletTime = 1; });
+C('rewindC', '時光倒流', 'buff', 2, '第一次倒下時，血量回到 5 秒前', m => { m.rewind = 1; });
+C('lastWill', '遺言', 'buff', 1, '被擊倒時，讓兇手中毒 10 層', m => { m.lastWill = 1; });
+C('corrode', '腐蝕', 'buff', 1, '每次命中，敵人受到的傷害永久 +3%', m => { m.corrode = (m.corrode || 0) + 0.03; });
+C('drainSpeed', '偷速', 'buff', 1, '每次命中偷走敵人 3% 速度', m => { m.drainSpeed = (m.drainSpeed || 0) + 0.03; });
+C('stealMax', '竊命', 'buff', 1, '每次命中偷走敵人 1 點最大血量', m => { m.stealMax = (m.stealMax || 0) + 1; });
+C('chainHit', '連鎖閃電', 'buff', 1, '命中時 20% 機率電到另一個敵人', m => { m.chainHit = (m.chainHit || 0) + 0.2; });
+C('critExplode', '爆擊炸裂', 'buff', 1, '暴擊率 +10%，暴擊時爆炸', m => { m.crit += 0.1; m.critExplode = 1; });
+C('frenzy', '狂熱', 'buff', 1, '每次命中，速度 +3%', m => { m.frenzy = (m.frenzy || 0) + 0.03; });
+C('energy', '能量吸收', 'buff', 1, '每次命中獲得 2 點護盾', m => { m.energy = (m.energy || 0) + 2; });
+C('backstab', '背刺', 'buff', 1, '從敵人背後打，傷害 ×1.6', m => { m.backstab = 1.6; });
+C('scope', '狙擊鏡', 'buff', 1, '子彈類傷害 ×1.5', m => { m.scope = (m.scope || 1) * 1.5; });
+C('toxicBlood', '毒血', 'buff', 1, '打到它的敵人會中毒', m => { m.toxicBlood = 1; });
+C('flameArmor', '火焰鎧甲', 'buff', 1, '打到它的敵人會灼燒', m => { m.flameArmor = 1; });
+C('frostArmor', '寒冰鎧甲', 'buff', 1, '打到它的敵人會變慢', m => { m.frostArmor = 1; });
+C('shockArmor', '電擊鎧甲', 'buff', 1, '打到它的敵人被電 2 點', m => { m.shockArmor = 1; });
+C('portal', '傳送門', 'buff', 1, '受傷時傳送到隨機位置（2.5 秒一次）', m => { m.portal = 1; });
+C('tumbler', '不倒翁', 'buff', 1, '前 20 秒血量不會低於 1', m => { m.tumbler = 1; });
+C('lifebuoy', '救生圈', 'buff', 1, '血量低於 20% 時得到 40 點護盾', m => { m.lifebuoy = 1; });
+C('revenge', '復仇', 'buff', 1, '血量第一次低於一半時，對所有敵人造成 15', m => { m.revenge = 1; });
+C('absorb', '吸收體', 'buff', 2, '被子彈打到會變成回血', m => { m.absorb = 1; });
+C('superArmor', '霸體', 'buff', 1, '幾乎不會被擊退，也不會被冰凍', m => { m.knockIn *= 0.05; m.immFreeze = 1; });
+C('clover', '幸運草', 'buff', 1, '閃避 +10%、暴擊 +10%', m => { m.dodge += 0.1; m.crit += 0.1; });
+C('sticky', '黏液皮膚', 'buff', 1, '碰到它的敵人會變慢', m => { m.sticky = 1; });
+C('lifeLink', '生命連結', 'buff', 2, '受到的傷害一半轉給隨機敵人', m => { m.lifeLink = 1; });
+C('fateLink', '命運共同體', 'buff', 2, '受傷時，所有敵人也受 30% 傷害', m => { m.fateLink = 1; });
+C('blackcat', '黑貓', 'buff', 1, '靠近它的敵人攻擊容易落空', m => { m.fumbleAura = 1; });
+C('sloth', '樹懶', 'debuff', 1, '速度和技能都 ×0.7', m => { m.spd *= 0.7; m.rate *= 0.7; });
+C('devolve', '退化', 'debuff', 1, '第 30 秒傷害減半', m => { m.devolve = 1; });
+C('smite', '天譴', 'debuff', 1, '第 20 秒被雷劈 20 點', m => { m.smite = 1; });
+C('storm', '烏雲罩頂', 'debuff', 1, '每 5 秒有 30% 機率被雷劈 6 點', m => { m.storm = 1; });
+C('drunk', '醉醺醺', 'debuff', 1, '每秒亂轉方向', m => { m.drunk = 1; });
+C('shortArm', '短手', 'debuff', 1, '武器長度 −35%', m => { m.armLen = (m.armLen || 1) * 0.65; });
+C('dull', '鈍刀', 'debuff', 1, '近戰和衝撞傷害 ×0.6', m => { m.dull = (m.dull || 1) * 0.6; });
+C('taunt', '嘲諷', 'debuff', 1, '所有敵人都會往它身上靠', m => { m.taunt = 1; });
+C('projMagnet', '子彈磁鐵', 'debuff', 1, '敵人的子彈會轉彎追著它', m => { m.projMagnet = 1; });
+C('amnesia', '失憶', 'debuff', 1, '前 8 秒忘記怎麼用技能和武器', m => { m.silenceStart = 8; });
+C('slipper', '溜冰鞋', 'wild', 1, '速度 ×1.4，但被擊退 ×1.6', m => { m.spd *= 1.4; m.knockIn *= 1.6; });
+C('cursedGold', '受詛咒的金幣', 'wild', 1, '傷害 ×1.4，但每秒扣 1.5 HP', m => { m.dmgOut *= 1.4; m.leak += 1.5; });
+C('hollow', '空心', 'wild', 1, '血量 ×0.6，速度 ×1.35', m => { m.hpMul *= 0.6; m.spd *= 1.35; });
+C('growT', '虛胖', 'wild', 1, '每 5 秒變大 4%', m => { m.growT = 1; });
+C('shrinkT', '縮水', 'wild', 1, '每 5 秒變小 4%', m => { m.shrinkT = 1; });
+C('lateEntry', '遲到', 'wild', 1, '前 5 秒不能動，但無敵', m => { m.lateEntry = 5; });
+C('overcharge', '爆衝', 'wild', 1, '前 10 秒技能 ×2，之後 ×0.6', m => { m.overcharge = 1; });
+C('gambler', '賭神', 'wild', 2, '每次傷害隨機 ×0～×3', m => { m.gambler = 1; });
+C('coward', '膽小鬼', 'wild', 1, '一直躲著敵人跑', m => { m.coward = 1; });
+// ---- v3 新卡：操控別人的牌 24（開戰時依出牌順序結算）----
+C('cancel', '沒收', 'meta', 1, '拿掉這顆球上「前一張」別人出的牌', null);
+C('purge', '淨化', 'meta', 1, '拿掉這顆球身上所有削弱牌', null);
+C('dispel', '驅散', 'meta', 1, '拿掉這顆球身上所有增益牌', null);
+C('invertCards', '黑白顛倒', 'meta', 2, '這顆球身上的增益變削弱、削弱變增益', null);
+C('copy', '影印機', 'meta', 2, '這顆球身上其他每張牌都生效兩次', null);
+C('redirect', '移花接木', 'meta', 1, '別人丟給這顆球的牌，全部轉到另一顆球', null);
+C('swapCards', '乾坤大挪移', 'meta', 2, '這顆球和另一顆球的牌全部對調', null);
+C('ward', '結界', 'meta', 1, '之後丟給這顆球的削弱牌，會被彈到別顆球', null);
+C('echo', '回音', 'meta', 1, '下一張丟給這顆球的牌生效兩次', null);
+C('blank', '白紙', 'meta', 1, '下一張丟給這顆球的牌直接作廢', null);
+C('double', '加倍奉還', 'meta', 1, '上一張丟給這顆球的牌生效兩次', null);
+C('nullAll', '歸零', 'meta', 2, '這張之前丟給這顆球的牌全部作廢', null);
+C('shuffle', '大洗牌', 'meta', 2, '所有球身上的牌全部打亂重分', null);
+C('thief', '偷天換日', 'meta', 2, '從每顆別的球身上偷一張增益給這顆球', null);
+C('dump', '嫁禍', 'meta', 1, '這顆球身上的削弱牌全部丟給另一顆球', null);
+C('magnetC', '磁吸', 'meta', 1, '之後丟給別顆球的增益，一半機率被吸到這顆球', null);
+C('lock', '封印', 'meta', 1, '這張之後丟給這顆球的牌全部無效', null);
+C('mirrorC', '鏡射', 'meta', 1, '之後丟給這顆球的牌，也會複製一張給另一顆球', null);
+C('upgrade', '加強版', 'meta', 1, '這顆球身上每張牌都有一半機率生效兩次', null);
+C('censor', '審查', 'meta', 1, '拿掉這顆球身上所有正負顛倒牌', null);
+C('chaosAll', '混沌之源', 'meta', 2, '這顆球身上每張牌都變成隨機的牌', null);
+C('lastCut', '壓軸', 'meta', 1, '開戰時拿掉這顆球「最後一張」別人出的牌', null);
+C('firstCut', '退件', 'meta', 1, '拿掉這顆球收到的第一張牌', null);
+C('gather', '眾望所歸', 'meta', 3, '所有球身上的增益全部移到這顆球', null);
 function drawCard() {
   const keys = Object.keys(CARDS); let tot = 0; for (const k of keys) tot += CARDS[k].w;
   let r = Math.random() * tot; for (const k of keys) { r -= CARDS[k].w; if (r <= 0) return k; } return keys[0];
 }
-function resolveChaos() { const keys = Object.keys(CARDS).filter(k => k !== 'chaos'); return keys[(Math.random() * keys.length) | 0]; }
+function resolveChaos() { const keys = Object.keys(CARDS).filter(k => k !== 'chaos' && CARDS[k].kind !== 'meta'); return keys[(Math.random() * keys.length) | 0]; }
+// ---------- resolving "操控" cards that change other players' cards ----------
+const OPP = { hp_up: 'curse', hp_up2: 'curse2', hp_pct: 'age', atk_up: 'weak', atk_up2: 'weak2', spd_up: 'slow', spd_up2: 'slow2', armor: 'fragile', armor2: 'fragile2',
+  regen: 'leak', regen2: 'leak2', holy: 'freeze', crit: 'clumsy', dodge: 'unlucky', rate: 'rust', rate2: 'sloth', growth: 'stunt', heavy: 'light', late: 'tired',
+  longArm: 'shortArm', evolve: 'devolve', meteor: 'smite', revive: 'doom', leech: 'noheal', thorns: 'bounty', laststand: 'brittle', berserk: 'decay', heartbeat: 'leak', secondwind: 'fatigue' };
+for (const [a, b] of Object.entries(OPP)) if (!OPP[b]) OPP[b] = a;
+function oppositeOf(k) {
+  const c = CARDS[k]; if (!c || (c.kind !== 'buff' && c.kind !== 'debuff')) return k;
+  if (OPP[k] && CARDS[OPP[k]]) return OPP[k];
+  const pool = Object.keys(CARDS).filter(x => CARDS[x].kind === (c.kind === 'buff' ? 'debuff' : 'buff'));
+  return pool[(Math.random() * pool.length) | 0];
+}
+// plays: [{pid, name, card, res, target}] in play order. Returns per-fighter lists of {key, name, note, mult, dead}
+function resolveCards(plays, n) {
+  const F = Array.from({ length: n }, () => []), st = Array.from({ length: n }, () => ({}));
+  const other = i => { if (n < 2) return i; let j = (Math.random() * (n - 1)) | 0; if (j >= i) j++; return j; };
+  const alive = i => F[i].filter(e => !e.dead && CARDS[e.key].kind !== 'meta');
+  const kill = (e, note) => { e.dead = true; e.note = note; };
+  for (const p of plays) {
+    let t = p.target; const key = p.res || p.card, kind = CARDS[key].kind;
+    const e = { key, orig: p.card, name: p.name, pid: p.pid, note: '', mult: 1, dead: false };
+    const S = st[t];
+    if (S.lock) { F[t].push(e); kill(e, '被封印'); continue; }
+    if (S.blank) { S.blank = false; F[t].push(e); kill(e, '被白紙蓋掉'); continue; }
+    if (S.ward && kind === 'debuff') { const j = other(t); e.note = '被結界彈開'; t = j; }
+    if (kind === 'buff') for (let g = 0; g < n; g++) if (g !== t && st[g].magnet && Math.random() < 0.5) { e.note = '被磁吸過去'; t = g; break; }
+    if (st[t].echo) { st[t].echo = false; e.mult = 2; e.note = (e.note ? e.note + '，' : '') + '回音 ×2'; }
+    if (st[t].mirror && kind !== 'meta') { const j = other(t); F[j].push({ key, orig: p.card, name: p.name, pid: p.pid, note: '鏡射複製', mult: 1, dead: false }); }
+    F[t].push(e);
+    if (kind !== 'meta') continue;
+    const T = t, mine = x => x.pid === p.pid;
+    switch (key) {
+      case 'cancel': { const prev = F[T].slice(0, -1).reverse().find(x => !x.dead && !mine(x) && CARDS[x.key].kind !== 'meta'); if (prev) kill(prev, '被沒收'); break; }
+      case 'purge': for (const x of alive(T)) if (CARDS[x.key].kind === 'debuff') kill(x, '被淨化'); break;
+      case 'dispel': for (const x of alive(T)) if (CARDS[x.key].kind === 'buff') kill(x, '被驅散'); break;
+      case 'censor': for (const x of alive(T)) if (CARDS[x.key].kind === 'flip') kill(x, '被審查'); break;
+      case 'invertCards': for (const x of alive(T)) { const o = oppositeOf(x.key); if (o !== x.key) { x.note = '顛倒成「' + CARDS[o].name + '」'; x.key = o; } } break;
+      case 'copy': for (const x of alive(T)) { x.mult *= 2; x.note = (x.note ? x.note + '，' : '') + '影印 ×2'; } break;
+      case 'upgrade': for (const x of alive(T)) if (Math.random() < 0.5) { x.mult *= 2; x.note = (x.note ? x.note + '，' : '') + '加強 ×2'; } break;
+      case 'double': { const prev = F[T].slice(0, -1).reverse().find(x => !x.dead && CARDS[x.key].kind !== 'meta'); if (prev) { prev.mult *= 2; prev.note = (prev.note ? prev.note + '，' : '') + '加倍 ×2'; } break; }
+      case 'redirect': { const j = other(T); for (const x of alive(T)) if (!mine(x)) { kill(x, '被移走'); F[j].push(Object.assign({}, x, { dead: false, note: '從別顆球移來' })); } break; }
+      case 'swapCards': { const j = other(T); const a = alive(T), b = alive(j); for (const x of a) kill(x, '被對調走'); for (const x of b) kill(x, '被對調走'); for (const x of a) F[j].push(Object.assign({}, x, { dead: false, note: '對調過來' })); for (const x of b) F[T].push(Object.assign({}, x, { dead: false, note: '對調過來' })); break; }
+      case 'dump': { const j = other(T); for (const x of alive(T)) if (CARDS[x.key].kind === 'debuff') { kill(x, '被嫁禍走'); F[j].push(Object.assign({}, x, { dead: false, note: '被嫁禍過來' })); } break; }
+      case 'nullAll': for (const x of alive(T)) kill(x, '被歸零'); break;
+      case 'chaosAll': for (const x of alive(T)) { const r = resolveChaos(); x.note = '變成「' + CARDS[r].name + '」'; x.key = r; } break;
+      case 'thief': for (let g = 0; g < n; g++) { if (g === T) continue; const bs = alive(g).filter(x => CARDS[x.key].kind === 'buff'); const x = bs[(Math.random() * bs.length) | 0]; if (x) { kill(x, '被偷走'); F[T].push(Object.assign({}, x, { dead: false, note: '偷來的' })); } } break;
+      case 'gather': for (let g = 0; g < n; g++) { if (g === T) continue; for (const x of alive(g)) if (CARDS[x.key].kind === 'buff') { kill(x, '被眾望所歸吸走'); F[T].push(Object.assign({}, x, { dead: false, note: '被吸過來' })); } } break;
+      case 'shuffle': { const all = []; for (let g = 0; g < n; g++) for (const x of alive(g)) { kill(x, '被洗走'); all.push(x); } for (const x of all) F[(Math.random() * n) | 0].push(Object.assign({}, x, { dead: false, note: '洗牌分到' })); break; }
+      case 'firstCut': { const x = F[T].find(y => !y.dead && CARDS[y.key].kind !== 'meta'); if (x) kill(x, '被退件'); break; }
+      case 'ward': S.ward = true; break;
+      case 'echo': st[T].echo = true; break;
+      case 'blank': st[T].blank = true; break;
+      case 'lock': st[T].lock = true; break;
+      case 'mirrorC': st[T].mirror = true; break;
+      case 'magnetC': st[T].magnet = true; break;
+      case 'lastCut': st[T].lastCut = p.pid; break;
+    }
+  }
+  for (let i = 0; i < n; i++) if (st[i].lastCut) { const x = F[i].slice().reverse().find(y => !y.dead && y.pid !== st[i].lastCut && CARDS[y.key].kind !== 'meta'); if (x) kill(x, '被壓軸拿掉'); }
+  return F;
+}
+function modFromEntries(list) { const keys = []; for (const e of list) if (!e.dead && CARDS[e.key].apply) for (let k = 0; k < Math.min(4, e.mult); k++) keys.push(e.key); return buildMod(keys); }
 function buildMod(cardKeys) {
   const m = baseMod(); for (const k of cardKeys) { const c = CARDS[k]; if (c && c.apply) c.apply(m); }
   m.spd = clamp(m.spd, 0.3, 2.5); m.size = clamp(m.size, 0.5, 2); m.dmgIn = clamp(m.dmgIn, 0.2, 4); m.dmgOut = clamp(m.dmgOut, 0.15, 5);
@@ -1420,10 +1947,10 @@ function buildMod(cardKeys) {
 // ---------- SNAPSHOT (compact, what the renderer draws; also sent over the network) ----------
 const r0 = v => Math.round(v);
 const r2 = v => Math.round(v * 100) / 100;
-const HZK = { fire: 0, poison: 1, bomb: 2, turret: 3, mine: 4 }, PJK = { arrow: 0, shard: 1, boomer: 2, bullet: 3, missile: 4, spike: 5, ball: 6 };
+const HZK = { fire: 0, poison: 1, bomb: 2, turret: 3, mine: 4, zone: 5, trap: 6, warn: 7 }, PJK = { arrow: 0, shard: 1, boomer: 2, bullet: 3, missile: 4, spike: 5, ball: 6, star: 7, note: 8, fist: 9 };
 const CDP = { archer: 1.25, ice: 1.0, thunder: 2.4, bomber: 0.95, ghost: 2.8, summoner: 2.2, shotgun: 1.5, sniper: 3.2, cannon: 2.2, mage: 1.4 };
 function cdFrac(b) {
-  const k = b.def.key, s = b.s;
+  const s = b.s, k = s.mk || b.def.key;
   if (k === 'laser') return s.state === 'fire' ? 1 : clamp(1 - s.t / 2.2, 0, 1);
   if (k === 'boomerang') return s.held ? clamp(1 - s.cd / 0.6, 0, 1) : 0;
   const p = CDP[k] || s._cp; if (!p || p < 0.8 || s.cd === undefined) return -1;
@@ -1440,7 +1967,7 @@ function snapshot(w) {
       const av = b.frozen > 0 ? 0 : x.spin * x.dir * (1 - b.chill * 0.6);
       return [x.look, r2(x.a), r2(av), x.len, x.width, x.head || 0, r2(x.span || 0), x.off, x.n || 0, x.orbR || 0, x.thick || 0];
     });
-    const s = b.s, k = b.def.key;
+    const s = b.s, k = b.s.mk || b.def.key;
     if (k === 'archer') o.aim = r2(s.aim);
     if (k === 'boomerang' && s.held) { o.aim = r2(s.aim); o.hb = 1; }
     if (b.def.aura) { const au = b.def.aura(b); if (au) o.au = [Math.round(au[0]), au[1]]; }
@@ -1449,13 +1976,14 @@ function snapshot(w) {
     if (!b.minion && w.invActive(b)) o.ix = 1;
     if (!b.minion) { const cf = cdFrac(b); if (cf >= 0) o.cd = r2(cf); }
     if (b.barrier > 0) o.ba = 1;
+    if (s.beam) { o.aim = r2(s.aim); o.ls = 2; o.ll = r0(s.len || 0); o.lw = r0(6 + s.pw * 0.8); }
     if (k === 'laser') { o.aim = r2(s.aim); o.ls = s.state === 'fire' ? 2 : 1; o.lt = r2(s.t); o.ll = r0(s.len || 0); o.lw = r0(8 + s.power * 0.4); }
     return o;
   });
   return {
     t: r2(w.t), mg: r0(w.margin), sh: r0(w.shake), hs: w.hitstop > 0 ? 1 : 0, sl: w.slow > 0 ? 1 : 0, ot: w.t > OT ? 1 : 0, balls,
     pj: w.proj.map(p => { const a = [PJK[p.kind] ?? 3, r0(p.x), r0(p.y), r0(p.vx), r0(p.vy), p.r, p.spin ? r2(p.spin) : 0]; if (PJK[p.kind] >= 3 || PJK[p.kind] === undefined) a.push(p.color || '#fff'); return a; }),
-    hz: w.haz.map(h => { const a = [HZK[h.kind] ?? 0, r0(h.x), r0(h.y), r0(h.r), r2(h.life / h.max), h.R || 0]; if (h.kind === 'turret') a.push(r2(h.aim || 0), h.color); if (h.kind === 'mine') a.push(h.arm > 0 ? 0 : 1); return a; }),
+    hz: w.haz.map(h => { const a = [HZK[h.kind] ?? 0, r0(h.x), r0(h.y), r0(h.r), r2(h.life / h.max), h.R || 0]; if (h.kind === 'turret') a.push(r2(h.aim || 0), h.color); if (h.kind === 'mine') a.push(h.arm > 0 ? 0 : 1); if (h.kind === 'zone' || h.kind === 'warn' || h.kind === 'trap') a.push(h.color || '#888'); return a; }),
     fx: w.fx.map(f => Object.assign({}, f, { f: r2(f.life / f.max), life: undefined, max: undefined })),
     hud: w.mains.map(b => ({ hp: Math.max(0, r0(b.hp * 10) / 10), max: r0(b.maxHp), st: b.def.stat ? b.def.stat(b, w) : '', d: b.dead ? 1 : 0, bu: b.burn, po: b.poison, fz: b.frozen > 0 ? 1 : 0, ix: w.invActive(b) ? 1 : 0, ba: Math.ceil(b.barrier || 0) })),
     over: w.over ? 1 : 0, win: w.winner,
@@ -1463,10 +1991,10 @@ function snapshot(w) {
 }
 function decayShake(w, dt) { w.shake = Math.max(0, w.shake - dt * 40); }
 
-if (typeof module !== 'undefined') module.exports = { World, DEFS, ROSTER, CARDS, buildMod, drawCard, resolveChaos, snapshot, decayShake, SIZE };
+if (typeof module !== 'undefined') module.exports = { World, DEFS, ROSTER, CARDS, resolveCards, modFromEntries, buildMod, drawCard, resolveChaos, snapshot, decayShake, SIZE };
 
 // ================= RENDERER (draws snapshots; same path for host and clients) =================
-const HZ_KIND = ['fire', 'poison', 'bomb', 'turret', 'mine'], PJ_KIND = ['arrow', 'shard', 'boomer', 'bullet', 'missile', 'spike', 'ball'];
+const HZ_KIND = ['fire', 'poison', 'bomb', 'turret', 'mine', 'zone', 'trap', 'warn'], PJ_KIND = ['arrow', 'shard', 'boomer', 'bullet', 'missile', 'spike', 'ball', 'star', 'note', 'fist'];
 function shade(hex, amt) { // amt -1..1
   const n = parseInt(hex.slice(1), 16); let r = n >> 16, g = (n >> 8) & 255, b = n & 255;
   if (amt < 0) { r *= 1 + amt; g *= 1 + amt; b *= 1 + amt; } else { r += (255 - r) * amt; g += (255 - g) * amt; b += (255 - b) * amt; }
@@ -1555,6 +2083,15 @@ class Renderer {
         ctx.save(); ctx.translate(x, y); ctx.fillStyle = '#3a4150'; ctx.strokeStyle = col; ctx.lineWidth = 2;
         ctx.fillRect(-9, -9, 18, 18); ctx.strokeRect(-9, -9, 18, 18); ctx.rotate(aim); ctx.fillStyle = col; ctx.fillRect(0, -2.5, 15, 5); ctx.restore();
         ctx.fillStyle = 'rgba(255,255,255,0.25)'; ctx.fillRect(x - 9, y + 12, 18 * f, 2);
+      } else if (kind === 'zone') {
+        const col = h[6] || '#888'; ctx.globalAlpha = 0.22 * Math.min(1, f * 3); ctx.fillStyle = col; ctx.beginPath(); ctx.arc(x, y, r, 0, 6.283); ctx.fill();
+        ctx.globalAlpha = 0.5 * Math.min(1, f * 3); ctx.strokeStyle = col; ctx.lineWidth = 1.5; ctx.setLineDash([4, 4]); ctx.stroke(); ctx.setLineDash([]); ctx.globalAlpha = 1;
+      } else if (kind === 'warn') {
+        const col = h[6] || '#e5484d', k = 1 - f; ctx.strokeStyle = col; ctx.lineWidth = 2.5; ctx.setLineDash([6, 5]); ctx.beginPath(); ctx.arc(x, y, r, 0, 6.283); ctx.stroke(); ctx.setLineDash([]);
+        ctx.globalAlpha = 0.15 + 0.3 * k; ctx.fillStyle = col; ctx.beginPath(); ctx.arc(x, y, r * k, 0, 6.283); ctx.fill(); ctx.globalAlpha = 1;
+      } else if (kind === 'trap') {
+        ctx.strokeStyle = '#23262d'; ctx.lineWidth = 2; ctx.fillStyle = '#b08968'; ctx.beginPath(); ctx.arc(x, y, r, 0, 6.283); ctx.fill(); ctx.stroke();
+        ctx.beginPath(); for (let i = 0; i < 8; i++) { const a = i * 0.785; ctx.moveTo(x + Math.cos(a) * r * 0.4, y + Math.sin(a) * r * 0.4); ctx.lineTo(x + Math.cos(a) * r * 1.1, y + Math.sin(a) * r * 1.1); } ctx.stroke();
       } else if (kind === 'mine') {
         ctx.fillStyle = '#2b2f38'; ctx.strokeStyle = '#6b5a4e'; ctx.lineWidth = 2; ctx.beginPath(); ctx.arc(x, y, r, 0, 6.283); ctx.fill(); ctx.stroke();
         ctx.fillStyle = h[6] ? ((Math.floor(performance.now() / 250) % 2) ? '#ff3b3b' : '#6a1a1a') : '#555'; ctx.beginPath(); ctx.arc(x, y, 2.5, 0, 6.283); ctx.fill();
@@ -1593,6 +2130,15 @@ class Renderer {
       } else if (kind === 'ball') {
         ctx.fillStyle = '#2f3138'; ctx.strokeStyle = '#8a8f9c'; ctx.lineWidth = 2; ctx.beginPath(); ctx.arc(0, 0, r, 0, 6.283); ctx.fill(); ctx.stroke();
         ctx.fillStyle = 'rgba(255,255,255,0.25)'; ctx.beginPath(); ctx.arc(-r * 0.3, -r * 0.3, r * 0.35, 0, 6.283); ctx.fill();
+      } else if (kind === 'star') {
+        ctx.rotate(sp || 0); ctx.fillStyle = pc || '#adb5bd'; ctx.strokeStyle = '#23262d'; ctx.lineWidth = 1.5; ctx.beginPath();
+        for (let i = 0; i < 10; i++) { const rr = i % 2 ? r * 0.45 : r * 1.15, a = i * Math.PI / 5; ctx.lineTo(Math.cos(a) * rr, Math.sin(a) * rr); } ctx.closePath(); ctx.fill(); ctx.stroke();
+      } else if (kind === 'note') {
+        ctx.rotate(-a); ctx.fillStyle = pc || '#ff70a6'; ctx.strokeStyle = '#23262d'; ctx.lineWidth = 1.5;
+        ctx.beginPath(); ctx.ellipse(-2, 3, r * 0.8, r * 0.6, -0.4, 0, 6.283); ctx.fill(); ctx.stroke(); ctx.beginPath(); ctx.moveTo(r * 0.6 - 2, 2); ctx.lineTo(r * 0.6 - 2, -r * 1.6); ctx.lineTo(r * 1.4, -r * 1.1); ctx.stroke();
+      } else if (kind === 'fist') {
+        ctx.fillStyle = pc || '#adb5bd'; ctx.strokeStyle = '#23262d'; ctx.lineWidth = 2; ctx.beginPath(); ctx.rect(-r, -r * 0.8, r * 1.8, r * 1.6); ctx.fill(); ctx.stroke();
+        ctx.fillStyle = '#ff9b3d'; ctx.beginPath(); ctx.moveTo(-r, -r * 0.4); ctx.lineTo(-r * 2.2, 0); ctx.lineTo(-r, r * 0.4); ctx.fill();
       } else if (kind === 'boomer') {
         ctx.lineCap = 'round'; ctx.beginPath(); ctx.moveTo(-r, -r * 0.6); ctx.lineTo(0, 0); ctx.lineTo(-r, r * 0.6); ctx.strokeStyle = '#23262d'; ctx.lineWidth = 9; ctx.stroke(); ctx.strokeStyle = '#ffb74d'; ctx.lineWidth = 5; ctx.stroke(); ctx.lineCap = 'butt';
       }
@@ -1726,6 +2272,13 @@ class Renderer {
       for (let i = 0; i < n; i++) { const an = i * 6.283 / n, cx = Math.cos(an) * R, cy = Math.sin(an) * R; ctx.fillStyle = '#cfd6dd'; ctx.strokeStyle = '#23262d'; ctx.lineWidth = 1.5; ctx.beginPath();
         for (let k = 0; k < 16; k++) { const aa = k * 6.283 / 16 + performance.now() / 60, rr = k % 2 ? orbR : orbR + 4; ctx.lineTo(cx + Math.cos(aa) * rr, cy + Math.sin(aa) * rr); } ctx.closePath(); ctx.fill(); ctx.stroke();
         ctx.fillStyle = col; ctx.beginPath(); ctx.arc(cx, cy, 3, 0, 6.283); ctx.fill(); }
+    } else if (look === 'fist') {
+      ctx.strokeStyle = '#23262d'; ctx.lineWidth = 3; ctx.beginPath(); ctx.moveTo(r * 0.6, 0); ctx.lineTo(r + len - 4, 0); ctx.stroke();
+      ctx.fillStyle = col; ctx.strokeStyle = '#23262d'; ctx.lineWidth = 2; ctx.beginPath(); ctx.arc(r + len + 2, 0, head || 9, 0, 6.283); ctx.fill(); ctx.stroke();
+      ctx.fillStyle = 'rgba(255,255,255,0.5)'; ctx.fillRect(r + len - 2, -(head || 9) * 0.5, 4, (head || 9));
+    } else if (look === 'shieldorb') {
+      const R = r + off;
+      for (let i = 0; i < n; i++) { const an = i * 6.283 / n; ctx.save(); ctx.translate(Math.cos(an) * R, Math.sin(an) * R); ctx.rotate(an); ctx.fillStyle = '#cfd8e6'; ctx.strokeStyle = '#23262d'; ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(-orbR * 0.6, -orbR); ctx.lineTo(orbR * 0.7, -orbR * 0.7); ctx.lineTo(orbR * 0.7, orbR * 0.7); ctx.lineTo(-orbR * 0.6, orbR); ctx.quadraticCurveTo(orbR * 0.1, 0, -orbR * 0.6, -orbR); ctx.fill(); ctx.stroke(); ctx.fillStyle = col; ctx.fillRect(-1, -orbR * 0.6, 4, orbR * 1.2); ctx.restore(); }
     } else if (look === 'sword' || look === 'dagger') {
       const r0 = r * 0.75, r1 = r + len, hw = wd / 2 + 1;
       ctx.fillStyle = '#e9eef4'; ctx.strokeStyle = '#23262d'; ctx.lineWidth = 1.5;
@@ -1825,9 +2378,9 @@ const Net = {
 // ================= GAME (host-authoritative state machine + UI) =================
 const START_CHIPS = 100, MIN_BET = 10, HAND_START = 6, HAND_DRAW = 4, HAND_MAX = 10, MAX_PLAYERS = 8;
 const BOT_NAMES = ['阿呆', '小黑', '胖虎', '豆花', '鐵蛋', '波波', '阿嬤', '旺財'];
-const KIND_LABEL = { buff: '增益', debuff: '削弱', wild: '特殊', flip: '正負顛倒' };
+const KIND_LABEL = { buff: '增益', debuff: '削弱', wild: '特殊', flip: '正負顛倒', meta: '操控' };
 const RARITY = ['', '', '稀有', '傳說'];
-const BOT_GOOD = new Set(['flip', 'flipAll', 'flipTime', 'flipTide', 'flipDot', 'gamble', 'glass', 'turtle', 'overload', 'berserk2', 'balloon', 'deathbomb', 'miracle', 'dice', 'coin', 'swap']);
+const BOT_GOOD = new Set(['purge', 'ward', 'thief', 'gather', 'echo', 'copy', 'double', 'upgrade', 'magnetC', 'censor', 'mirrorC', 'flip', 'flipAll', 'flipTime', 'flipTide', 'flipDot', 'gamble', 'glass', 'turtle', 'overload', 'berserk2', 'balloon', 'deathbomb', 'miracle', 'dice', 'coin', 'swap']);
 const $ = s => document.querySelector(s);
 const esc = s => String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 function store(k, v) { try { if (v === undefined) return localStorage.getItem(k); localStorage.setItem(k, v); } catch (e) { return null; } }
@@ -1960,7 +2513,7 @@ class Host {
             if (!p.hand.length || Math.random() < 0.3) return this.action(p.id, { t: 'play', card: null });
             const ci = (Math.random() * p.hand.length) | 0, c = CARDS[p.hand[ci]];
             let ti = p.fav;
-            if (c.kind === 'debuff' || (c.kind === 'flip' && !BOT_GOOD.has(p.hand[ci]))) { const others = G.fighters.map((_, i) => i).filter(i => i !== p.fav); ti = others[(Math.random() * others.length) | 0]; }
+            if (c.kind === 'debuff' || ((c.kind === 'flip' || c.kind === 'meta') && !BOT_GOOD.has(p.hand[ci]))) { const others = G.fighters.map((_, i) => i).filter(i => i !== p.fav); ti = others[(Math.random() * others.length) | 0]; }
             else if (p.hand[ci] === 'chaos') ti = (Math.random() * G.fighters.length) | 0;
             this.action(p.id, { t: 'play', card: ci, target: ti });
             this.botTimers.push(setTimeout(playOne, rand(700, 2200)));
@@ -1989,7 +2542,8 @@ class Host {
   startBattle() {
     const G = this.G;
     for (const pl of G.plays) pl.res = pl.card === 'chaos' ? resolveChaos() : pl.card;
-    const entries = G.fighters.map((k, i) => ({ key: k, mod: buildMod(G.plays.filter(pl => pl.target === i).map(pl => pl.res)) }));
+    G.final = resolveCards(G.plays.map(pl => ({ pid: pl.pid, name: (this.P(pl.pid) || { name: '?' }).name, card: pl.card, res: pl.res, target: pl.target })), G.fighters.length);
+    const entries = G.fighters.map((k, i) => ({ key: k, mod: modFromEntries(G.final[i]) }));
     this.world = new World(entries); this.finishing = false;
     G.phase = 'battle'; G.bstate = 'intro'; G.introDur = introPlan(G.plays.length).total;
     this.sendFrame();
@@ -2054,7 +2608,8 @@ class Host {
       myPlays: G.plays.filter(pl => pl.pid === pid).map(pl => ({ card: pl.card, target: pl.target, turn: pl.turn })),
       myBet: G.bets[pid] || null, mySub: !!G.sub[pid],
       reveal: showAll ? { plays: G.plays.map(pl => ({ name: name(pl.pid), mine: pl.pid === pid, card: pl.card, res: pl.res, target: pl.target })),
-        bets: Object.entries(G.bets).map(([id, b]) => ({ name: name(id), mine: id === pid, f: b.f, amt: b.amt })) } : null,
+        bets: Object.entries(G.bets).map(([id, b]) => ({ name: name(id), mine: id === pid, f: b.f, amt: b.amt })),
+        final: (G.final || []).map(l => l.map(e => ({ key: e.key, orig: e.orig, name: e.name, mine: e.pid === pid, note: e.note, mult: e.mult, dead: e.dead }))) } : null,
       result: G.result ? Object.assign({}, G.result, { rows: G.result.rows.map(r => Object.assign({ name: name(r.pid), mine: r.pid === pid }, r)) }) : null,
       history: G.history,
     };
@@ -2275,9 +2830,10 @@ const App = {
     if (v.phase === 'battle' && v.bstate === 'intro') return '<p class="wait-note" style="text-align:center">揭牌中</p>';
     const cols = v.fighters.map((f, i) => {
       const d = DEFS[f.key];
-      const plays = R.plays.filter(p => p.target === i).map(p => {
-        const c = CARDS[p.res || p.card], chaos = p.card === 'chaos' ? '<i class="tag">混沌 → </i>' : '';
-        return '<li class="' + (p.mine ? 'mine' : '') + '"><span>' + chaos + '<span class="mini ' + c.kind + '">' + c.name + '</span> ' + c.desc + '</span><em>— ' + esc(p.name) + '</em></li>';
+      const list = R.final && R.final[i] ? R.final[i] : R.plays.filter(p => p.target === i).map(p => ({ key: p.res || p.card, orig: p.card, name: p.name, mine: p.mine, note: '', mult: 1, dead: false }));
+      const plays = list.map(p => {
+        const c = CARDS[p.key], pre = p.orig === 'chaos' && p.key !== 'chaos' ? '<i class="tag">混沌 → </i>' : '';
+        return '<li class="' + (p.mine ? 'mine' : '') + (p.dead ? ' dead' : '') + '"><span>' + pre + '<span class="mini ' + c.kind + '">' + c.name + (p.mult > 1 ? ' ×' + p.mult : '') + '</span> ' + c.desc + '</span>' + (p.note ? '<b class="note">' + esc(p.note) + '</b>' : '') + '<em>— ' + esc(p.name) + '</em></li>';
       }).join('') || '<li class="none">沒有人丟牌</li>';
       const bets = R.bets.filter(b => b.f === i), tot = bets.reduce((s, b) => s + b.amt, 0);
       const winCls = v.result && v.result.win === i ? ' won' : (v.result ? ' lost' : '');
@@ -2452,7 +3008,7 @@ const App = {
   },
   buildDex() {
     $('#dex').innerHTML = ROSTER.map(k => { const d = DEFS[k]; return '<div class="dx">' + this.ballHtml(k, 38) + '<div><b>' + d.name + '</b><p>' + d.desc + '</p></div></div>'; }).join('');
-    $('#cardDex').innerHTML = ['buff', 'debuff', 'flip', 'wild'].map(kind => { const ks = Object.keys(CARDS).filter(k => CARDS[k].kind === kind); return '<h4 class="dexh"><span class="hl">' + KIND_LABEL[kind] + '</span> <span>' + ks.length + ' 張</span></h4><div class="cardgrid">' + ks.map(k => this.cardHtml(k)).join('') + '</div>'; }).join('');
+    $('#cardDex').innerHTML = ['buff', 'debuff', 'meta', 'flip', 'wild'].map(kind => { const ks = Object.keys(CARDS).filter(k => CARDS[k].kind === kind); return '<h4 class="dexh"><span class="hl">' + KIND_LABEL[kind] + '</span> <span>' + ks.length + ' 張</span></h4><div class="cardgrid">' + ks.map(k => this.cardHtml(k)).join('') + '</div>'; }).join('');
     const picks = ROSTER.slice().sort(() => Math.random() - 0.5).slice(0, 6);
     $('#doodle').innerHTML = picks.map((k, i) => '<span style="transform:rotate(' + ((i % 2 ? 1 : -1) * (4 + i * 2)) + 'deg) translateY(' + (i % 2 ? 4 : -2) + 'px)">' + this.ballHtml(k, 42) + '</span>').join('');
   },
