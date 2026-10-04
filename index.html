@@ -276,6 +276,79 @@ footer.foot { text-align: center; color: var(--ink3); font-size: 14px; padding: 
   #main.battle .rcols { grid-template-columns: minmax(0, 1fr); }
   #main.battle #panel { max-height: calc(100vh - 140px); overflow-y: auto; position: sticky; top: 64px; }
 }
+
+/* ===== one-screen app layout: the game never scrolls the page ===== */
+body.ingame { height: 100vh; height: 100dvh; overflow: hidden; display: flex; flex-direction: column; }
+body.ingame .top { position: static; flex: none; }
+body.ingame #game { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+body.ingame #game > .wrap { flex: 1; min-height: 0; display: flex; flex-direction: column; width: 100%; padding-bottom: 8px; }
+body.ingame #players { flex: none; padding-block: 8px 4px; }
+body.ingame #main { flex: 1; min-height: 0; display: flex; flex-direction: column; gap: 8px; }
+body.ingame #panel { flex: 1; min-height: 0; overflow-y: auto; overscroll-behavior: contain; display: flex; flex-direction: column; }
+body.ingame #panel > * { flex: none; }
+.handbar { position: static; flex: none; pointer-events: auto; padding-bottom: calc(env(safe-area-inset-bottom, 0px) + 4px); }
+.hand { height: 150px; }
+.handspace { display: none; }
+/* fighters fill the free space instead of pushing things down */
+body.ingame .fighters { flex: 1 1 auto; min-height: 0; grid-auto-rows: minmax(0, 1fr); align-content: stretch; margin-top: 10px; }
+body.ingame .fighter { padding: 8px 8px 6px; gap: 3px; overflow: hidden; align-content: center; }
+body.ingame .fighter .ball { --s: 46px !important; }
+body.ingame .fighter .fi b { font-size: 19px; }
+body.ingame .fighter .fi p { font-size: 13px; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
+body.ingame .tip { font-size: 14px; }
+body.ingame .phase-title { margin-top: 2px; }
+body.ingame #panel h2 { font-size: 22px; }
+.betbox { margin-top: 10px; padding: 10px 12px; display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 4px 12px; align-items: center; }
+.betbox .betamt b { font-size: 34px; }
+.betbox input[type=range] { grid-column: 1 / -1; margin: 0; }
+.betbox .chipbtns { margin: 0; justify-content: flex-end; }
+.betbox .chipbtn { width: 46px; height: 46px; font-size: 15px; }
+.betbox .row { grid-column: 1 / -1; margin-top: 4px; }
+.betbox .row .btn { width: 100%; }
+/* battle */
+body.ingame #stage { flex: 1; min-height: 0; display: flex; flex-direction: column; gap: 6px; margin: 0; }
+body.ingame #hud { flex: none; }
+body.ingame .arena-wrap { flex: none; aspect-ratio: auto; max-width: none; min-width: 0; margin: 0 auto; width: 300px; height: 300px; }
+body.ingame #main.battle #panel { flex: none; overflow: visible; }
+.bbar { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; justify-content: center; }
+.bbar .res { font-size: 18px; } .bbar .res b { font-size: 20px; }
+.bbar .up { color: #1f8a4c; font-family: var(--num); font-size: 22px; } .bbar .down { color: var(--red); font-family: var(--num); font-size: 22px; }
+#sheet { position: fixed; inset: 0; z-index: 60; background: rgba(35, 38, 45, .35); display: flex; align-items: flex-end; justify-content: center; }
+#sheet .sheet-in { width: min(100%, 720px); max-height: 82dvh; overflow-y: auto; padding: 16px; background: #fffdf8; border-radius: 18px 18px 0 0; position: relative; }
+#sheet .sheet-x { position: sticky; top: 0; float: right; z-index: 2; }
+body.ingame .final-wrap { flex: 1; min-height: 0; overflow-y: auto; }
+@media (min-width: 1000px) {
+  body.ingame #main.battle { display: grid; grid-template-columns: minmax(0, 1fr) 330px; grid-template-rows: minmax(0, 1fr); align-items: stretch; }
+  body.ingame #main.battle #panel { overflow-y: auto; position: static; max-height: none; flex: 1; }
+  .bbar.wide-hide { display: none; }
+}
+@media (max-height: 720px) {
+  body.ingame .fighter .fi p { -webkit-line-clamp: 2; }
+  .hand { height: 132px; }
+  .hand .card { min-height: 140px; }
+}
+
+body.ingame .fighters.compact .fi p { display: none; }
+body.ingame .fighters.compact .fighter { align-content: center; }
+body.ingame .hand { height: 142px; }
+body.ingame .hand .card { width: 104px; min-height: 134px; padding: 16px 7px 7px; background-size: 100% 30px; }
+body.ingame .hand .card b { font-size: 17px; margin-top: 10px; }
+body.ingame .hand .card .cd { font-size: 13px; }
+body.ingame .hand .card:hover, body.ingame .hand .card.sel { transform: translateY(-26px) scale(1.05); }
+@media (min-width: 760px) {
+  body.ingame .hand { height: 178px; }
+  body.ingame .hand .card { width: 128px; min-height: 166px; }
+  body.ingame #hud { grid-template-columns: none; grid-auto-flow: column; grid-auto-columns: minmax(0, 1fr); }
+}
+
+body.ingame #panel > .fighters { flex: 1 1 auto; max-height: 460px; }
+body.ingame .hand { height: auto; align-items: flex-start; padding: 30px 8px 22px; }
+#hud[data-n="3"] { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+@media (max-width: 759px) {
+  #hud[data-n="3"] .hb > .ball, #hud[data-n="4"] .hb > .ball { display: none; }
+  #hud[data-n="3"] .hb { padding: 5px 6px; }
+  #hud[data-n="3"] .hbt { font-size: 13px; } #hud[data-n="3"] .hpn { font-size: 13px; }
+}
 @media (prefers-reduced-motion: reduce) { * { animation: none !important; transition: none !important; } }
 </style>
 </head>
@@ -328,6 +401,7 @@ footer.foot { text-align: center; color: var(--ink3); font-size: 14px; padding: 
     </div>
   </div>
   <div class="handbar" id="handbar" hidden></div>
+  <div id="sheet" hidden><div class="sheet-in sk"><button class="btn small sheet-x" data-act="sheet">關閉</button><div id="sheetBody"></div></div></div>
 </main>
 
 <script>
@@ -1999,7 +2073,7 @@ const App = {
     let lw = window.innerWidth; window.addEventListener('resize', () => { if (window.innerWidth === lw) return; lw = window.innerWidth; this.last.hand = ''; this.render(); });
     this.initDrag();
     let lastT = performance.now();
-    const loop = () => { const now = performance.now(), dt = Math.min(0.05, (now - lastT) / 1000); lastT = now; if (!$('#stage').hidden) this.renderer.draw(dt); requestAnimationFrame(loop); };
+    const loop = () => { const now = performance.now(), dt = Math.min(0.05, (now - lastT) / 1000); lastT = now; if (!$('#stage').hidden) { this.fitArena(); this.renderer.draw(dt); } requestAnimationFrame(loop); };
     requestAnimationFrame(loop);
     this.buildDex();
   },
@@ -2035,12 +2109,12 @@ const App = {
     else if (m.t === 'err') { this.leaveGame(); this.homeErr(m.msg); }
   },
   act(m) { if (this.host) this.host.action(me.pid, m); else if (this.conn) this.conn.send(m); },
-  enterGame() { $('#home').hidden = true; $('#game').hidden = false; window.scrollTo(0, 0); },
+  enterGame() { $('#home').hidden = true; $('#game').hidden = false; document.body.classList.add('ingame'); window.scrollTo(0, 0); },
   leaveGame() {
     if (this.host) { this.host.destroy(); this.host = null; }
     if (this.conn) { this.conn.destroy(); this.conn = null; }
     this.view = null; this.last = {}; this.hudBuilt = ''; this.revealToken = null; this.revealKey = '';
-    $('#game').hidden = true; $('#home').hidden = false; $('#stage').hidden = true; $('#handbar').hidden = true; this.renderer.reset();
+    $('#game').hidden = true; $('#home').hidden = false; $('#stage').hidden = true; $('#handbar').hidden = true; $('#sheet').hidden = true; this.ui.sheet = false; document.body.classList.remove('ingame'); this.renderer.reset();
   },
   onFrame(m) { this.renderer.feed(m.s, m.e); this.updateHud(m.s); },
   onView(v) {
@@ -2048,7 +2122,7 @@ const App = {
     if (!prev || prev.phase !== v.phase || prev.turn !== v.turn || prev.round !== v.round) this.ui.sel = null;
     if (v.phase === 'bet' && (!prev || prev.phase !== 'bet')) { this.ui.betF = null; this.ui.betAmt = Math.min(v.chips, Math.max(MIN_BET, Math.round(v.chips * 0.25))); }
     if (v.phase === 'battle' && v.bstate === 'intro' && (!prev || prev.phase !== 'battle')) { this.introAt = performance.now(); this.renderer.reset(); }
-    if (prev && prev.phase !== v.phase) window.scrollTo({ top: 0, behavior: 'smooth' });
+    if (prev && prev.phase !== v.phase) { this.ui.sheet = false; const pn = $('#panel'); if (pn) pn.scrollTop = 0; }
     this.render();
   },
   syncSnd() { const b = $('.snd'); b.textContent = SFX.on ? '聲' : '靜'; b.classList.toggle('on', SFX.on); },
@@ -2067,7 +2141,15 @@ const App = {
       $('#handbar').hidden = !showHand;
       if (showHand) this.put('#handbar', 'hand', this.handHtml(v)); else this.last.hand = '';
     }
+    const sheetOn = this.ui.sheet && showStage && window.innerWidth < 1000;
+    $('#sheet').hidden = !sheetOn;
+    if (sheetOn) this.put('#sheetBody', 'sheet', this.revealHtml(v)); else this.last.sheet = '';
     this.syncBet();
+  },
+  fitArena() {
+    const st = $('#stage'); if (st.hidden) return;
+    const w = st.clientWidth, h = st.clientHeight - $('#hud').offsetHeight - 6, size = Math.max(160, Math.floor(Math.min(w, h)));
+    const aw = $('.arena-wrap'); if (aw.dataset.sz !== String(size)) { aw.style.width = aw.style.height = size + 'px'; aw.dataset.sz = String(size); }
   },
   ballHtml(key, size) { const d = DEFS[key]; return '<span class="ball" style="--c:' + d.color + ';--s:' + (size || 40) + 'px">' + d.glyph + '</span>'; },
   cardHtml(key, opts = {}) {
@@ -2112,7 +2194,7 @@ const App = {
           '<button class="btn primary" data-act="start"' + (v.players.length < 2 ? ' disabled' : '') + '>開始遊戲 →</button></div>' + (v.players.length < 2 ? '<p class="muted small">至少要 2 位玩家，可以先加電腦玩家。</p>' : '')
           : '<p class="wait-note">等房主開始遊戲</p>') + '</section>';
     }
-    const grid = (inner, cls) => '<div class="fighters' + (n === 1 ? ' n1' : '') + '">' + v.fighters.map((_, i) => inner(i)).join('') + '</div>';
+    const grid = (inner, cls) => '<div class="fighters' + (n === 1 ? ' n1' : '') + (cls ? ' ' + cls : '') + '" style="--n:' + n + '">' + v.fighters.map((_, i) => inner(i)).join('') + '</div>';
     if (v.phase === 'pick') {
       return this.title(v, '本局選手', this.roundTag(v)) + grid(i => this.fighterBox(v, i)) +
         (v.isHost ? '<div class="row"><button class="btn" data-act="reroll">重抽</button><button class="btn primary" data-act="confirm">就是他們，開始出牌 →</button></div>' : '<p class="wait-note">房主確認選手中</p>');
@@ -2124,10 +2206,10 @@ const App = {
         const mine = v.myPlays.filter(p => p.target === i).map(p => '<span class="mini ' + CARDS[p.card].kind + '">' + CARDS[p.card].name + '</span>').join('');
         const inner = '<div class="tally">收到 <b>' + tally(f.count) + '</b>' + (f.count ? '（' + f.count + '）' : '') + '</div>' + (mine ? '<div class="gave">' + mine + '</div>' : '') + (selecting ? '<span class="tapme">丟給它</span>' : '');
         return this.fighterBox(v, i, inner, '', selecting ? 'target' : '');
-      });
+      }, n >= 3 ? 'compact' : '');
       const tip = v.mySub ? '<p class="wait-note">你出完了，等其他人</p>' : !v.hand.length ? '<p class="muted">你沒有手牌了。</p><div class="row"><button class="btn primary" data-act="pass">我出完了</button></div>'
-        : '<p class="tip">大家同時出牌，想丟幾張都可以。把下面的牌<b>拖到</b>選手身上，或先點牌再點選手；丟完按「我出完了」。別人只看得到每顆球收到幾張牌。</p>';
-      return this.title(v, '祕密丟牌', this.roundTag(v)) + tip + fs + this.myPlaysSummary(v) + (!v.mySub && v.hand.length ? '<div class="handspace"></div>' : '');
+        : '<p class="tip">同時出牌、張數不限：把牌<b>拖到</b>選手身上，丟完按「我出完了」。</p>';
+      return this.title(v, '祕密丟牌', this.roundTag(v)) + tip + fs + this.myPlaysSummary(v);
     }
     if (v.phase === 'bet') {
       const ui = this.ui;
@@ -2136,15 +2218,15 @@ const App = {
         return this.title(v, '下注', this.roundTag(v)) + (b ? '<p class="bigline">你押了 <b class="num" style="font-size:30px">' + b.amt + '</b> 在 ' + this.ballHtml(v.fighters[b.f].key, 34) + ' <b>' + DEFS[v.fighters[b.f].key].name + '</b></p>' : '<p class="bigline">你這局沒有下注。</p>') +
           '<p class="wait-note">等其他人下注</p>' + this.myPlaysSummary(v);
       }
-      const fs = grid(i => this.fighterBox(v, i, '<div class="tally">收到 <b>' + tally(v.fighters[i].count) + '</b>' + (v.fighters[i].count ? '（' + v.fighters[i].count + '）' : '') + '</div>', ui.betF === i ? 'picked' : '', 'betF'));
+      const fs = grid(i => this.fighterBox(v, i, '<div class="tally">收到 <b>' + tally(v.fighters[i].count) + '</b>' + (v.fighters[i].count ? '（' + v.fighters[i].count + '）' : '') + '</div>', ui.betF === i ? 'picked' : '', 'betF'), 'compact');
       const max = v.chips, min = Math.min(MIN_BET, max);
-      return this.title(v, '下注', this.roundTag(v)) + '<p class="tip">點一顆球押它。押中的人按押注比例分掉整個獎池' + (v.carry ? '（含累積的 ' + v.carry + '）' : '') + '。押注開打時才公開。</p>' + fs +
+      return this.title(v, '下注', this.roundTag(v)) + '<p class="tip">點一顆球押它，押中的人按比例分掉獎池' + (v.carry ? '（含累積 ' + v.carry + '）' : '') + '。</p>' + fs +
         '<div class="betbox sheet sk"><div class="betamt"><i class="chip" style="width:24px;height:24px"></i><b id="betLabel">' + ui.betAmt + '</b><span class="muted">/ ' + max + '</span></div>' +
-        '<input type="range" id="betAmt" min="' + min + '" max="' + max + '" step="1" value="' + ui.betAmt + '" aria-label="押注金額">' +
+        (max > min ? '<input type="range" id="betAmt" min="' + min + '" max="' + max + '" step="1" value="' + ui.betAmt + '" aria-label="押注金額">' : '<input type="range" min="0" max="1" value="1" disabled aria-label="全押">') +
         '<div class="chipbtns"><button class="chipbtn" data-act="betQ" data-v="min">最少</button><button class="chipbtn" style="--c:var(--buff)" data-act="betQ" data-v="+10">+10</button><button class="chipbtn" style="--c:var(--flip)" data-act="betQ" data-v="0.5">一半</button><button class="chipbtn" style="--c:var(--debuff)" data-act="betQ" data-v="1">全押</button></div>' +
         '<div class="row"><button class="btn primary" data-act="bet"' + (ui.betF === null ? ' disabled' : '') + '>' + (ui.betF === null ? '先點一顆球' : '押「' + DEFS[v.fighters[ui.betF].key].name + '」') + '</button></div></div>' + this.myPlaysSummary(v);
     }
-    if (v.phase === 'battle' || v.phase === 'result') return this.revealHtml(v);
+    if (v.phase === 'battle' || v.phase === 'result') return window.innerWidth >= 1000 ? this.revealHtml(v) : this.bbarHtml(v);
     if (v.phase === 'final') {
       const ps = v.players.slice().sort((a, b) => b.chips - a.chips);
       return '<section class="sheet sk">' + this.title(v, '最終排名') + '<ol class="rank">' + ps.map((p, i) => '<li class="' + (i === 0 ? 'top' : '') + (p.id === me.pid ? ' me' : '') + '"><span class="rk">' + (i + 1) + '</span><span class="pn">' + esc(p.name) + (i === 0 ? '（冠軍）' : '') + '</span><span class="pc"><i class="chip"></i>' + p.chips + '</span></li>').join('') + '</ol>' +
@@ -2157,11 +2239,20 @@ const App = {
     return '<p class="muted small" style="margin-top:14px">你這局丟的牌：' + v.myPlays.map(p => '<span class="mini ' + CARDS[p.card].kind + '">' + CARDS[p.card].name + ' → ' + DEFS[v.fighters[p.target].key].name + '</span>').join(' ') + '</p>';
   },
   handHtml(v) {
-    const n = v.hand.length, wide = window.innerWidth >= 760, cw = wide ? 132 : 118, avail = Math.min(window.innerWidth - 70, 900);
+    const n = v.hand.length, wide = window.innerWidth >= 760, cw = wide ? 128 : 104, avail = Math.min(window.innerWidth - 70, 900);
     const ov = n > 1 ? Math.min(-6, (avail - n * cw) / (n - 1)) : 0, mid = (n - 1) / 2;
-    const cards = v.hand.map((k, i) => { const d = i - mid; return this.cardHtml(k, { idx: i, sel: this.ui.sel === i, style: '--rot:' + (d * Math.min(5, 22 / n)).toFixed(1) + 'deg;--dy:' + Math.round(d * d * Math.min(3, 14 / n)) + 'px;--ov:' + Math.round(ov) + 'px;z-index:' + (i + 1) }); }).join('');
+    const cards = v.hand.map((k, i) => { const d = i - mid; return this.cardHtml(k, { idx: i, sel: this.ui.sel === i, style: '--rot:' + (d * Math.min(4, 16 / n)).toFixed(1) + 'deg;--dy:' + Math.round(d * d * Math.min(2, 8 / n)) + 'px;--ov:' + Math.round(ov) + 'px;z-index:' + (i + 1) }); }).join('');
     const n0 = v.myPlays.length;
     return '<div class="tools"><span class="hint">' + (this.ui.sel === null ? (n0 ? '已丟 ' + n0 + ' 張，還可以繼續丟' : '拖一張牌丟給選手') : '點上面的選手丟出去') + '</span><button class="btn small primary" data-act="pass">我出完了</button></div><div class="hand">' + cards + '</div>';
+  },
+  bbarHtml(v) {
+    if (v.phase === 'battle' && v.bstate === 'intro') return '<div class="bbar"><span class="wait-note" style="margin:0">揭牌中</span></div>';
+    const det = '<button class="btn small" data-act="sheet">看牌和押注</button>';
+    if (v.phase === 'battle') return '<div class="bbar">' + (v.isHost ? '<span class="speed" style="margin:0">' + [1, 2, 3].map(s => '<button class="seg' + (v.speed === s ? ' on' : '') + '" data-act="speed" data-v="' + s + '">' + s + '×</button>').join('') + '</span>' : '') + det + '</div>';
+    const r = v.result; if (!r) return '';
+    const mine = r.rows.find(x => x.mine), d = mine ? mine.got - mine.amt : null;
+    return '<div class="bbar"><span class="res">' + (r.win >= 0 ? '<b class="hl">' + DEFS[v.fighters[r.win].key].name + '</b> 贏了' : '平手') + (d !== null ? '，你 <span class="' + (d >= 0 ? 'up' : 'down') + '">' + (d >= 0 ? '+' : '') + d + '</span>' : '') + '</span>' +
+      '<button class="btn small" data-act="sheet">明細</button>' + (v.isHost ? '<button class="btn small primary" data-act="next">' + (v.round >= v.settings.rounds ? '最終排名 →' : '下一局 →') + '</button>' : '<span class="muted small">等房主開下一局</span>') + '</div>';
   },
   revealHtml(v) {
     const R = v.reveal || { plays: [], bets: [] };
@@ -2193,6 +2284,7 @@ const App = {
     const key = v.round + ':' + v.fighters.map(f => f.key).join(',');
     if (this.hudBuilt !== key) {
       this.hudBuilt = key;
+      $('#hud').dataset.n = v.fighters.length;
       $('#hud').innerHTML = v.fighters.map((f, i) => { const d = DEFS[f.key]; return '<div class="hb" id="hb' + i + '" style="--c:' + d.color + '">' + this.ballHtml(f.key, 30) + '<div class="hbm"><div class="hbt"><b>' + d.name + '</b><span class="hpn"></span></div><div class="bar"><i class="lag"></i><i class="fill"></i></div><div class="hbs"><span class="stat"></span><span class="sts"></span></div></div></div>'; }).join('');
     }
     const ov = $('#overlay');
@@ -2311,6 +2403,7 @@ const App = {
   poof(x, y, text) { const p = document.createElement('div'); p.className = 'poof'; p.style.left = x + 'px'; p.style.top = y + 'px'; p.textContent = text; document.body.appendChild(p); setTimeout(() => p.remove(), 750); },
   click(e) {
     if (this.suppressClick) return;
+    if (e.target.id === 'sheet') { this.ui.sheet = false; this.render(); return; }
     const t = e.target.closest('[data-act]'); if (!t || t.disabled) return;
     const a = t.dataset.act, v = this.view, ui = this.ui;
     if (a !== 'leave') ui.leave = false;
@@ -2321,6 +2414,7 @@ const App = {
         const g = this.makeGhost(cardEl); cardEl.classList.add('away'); this.throwCard(g, ui.sel, +t.dataset.i, t); return;
       }
       case 'pass': this.act({ t: 'play', card: null }); return;
+      case 'sheet': ui.sheet = !ui.sheet; break;
       case 'betF': ui.betF = +t.dataset.i; break;
       case 'betQ': { const c = v.chips, q = t.dataset.v, mn = Math.min(MIN_BET, c); ui.betAmt = q === 'min' ? mn : q === '+10' ? Math.min(c, ui.betAmt + 10) : Math.max(mn, Math.round(c * +q)); break; }
       case 'bet': if (ui.betF !== null) this.act({ t: 'bet', f: ui.betF, amt: ui.betAmt }); return;
