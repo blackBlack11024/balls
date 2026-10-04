@@ -337,11 +337,11 @@ body.ingame .hand .card .cd { font-size: 13px; }
 body.ingame .hand .card:hover, body.ingame .hand .card.sel { transform: translateY(-26px) scale(1.05); }
 @media (min-width: 760px) {
   body.ingame .hand { height: 178px; }
-  body.ingame .hand .card { width: 128px; min-height: 166px; }
+  body.ingame .hand .card { width: 128px; min-height: 150px; }
   body.ingame #hud { grid-template-columns: none; grid-auto-flow: column; grid-auto-columns: minmax(0, 1fr); }
 }
 
-body.ingame #panel > .fighters { flex: 1 1 auto; max-height: 460px; }
+body.ingame #panel > .fighters { flex: 1 1 auto; max-height: 440px; }
 body.ingame .hand { height: auto; align-items: flex-start; padding: 30px 8px 22px; }
 #hud[data-n="3"] { grid-template-columns: repeat(3, minmax(0, 1fr)); }
 @media (max-width: 759px) {
@@ -349,6 +349,21 @@ body.ingame .hand { height: auto; align-items: flex-start; padding: 30px 8px 22p
   #hud[data-n="3"] .hb { padding: 5px 6px; }
   #hud[data-n="3"] .hbt { font-size: 13px; } #hud[data-n="3"] .hpn { font-size: 13px; }
 }
+
+/* fighter cards scale their text with the card size */
+body.ingame .fighter { container-type: size; }
+body.ingame .fighter .ball { --s: clamp(44px, min(34cqi, 24cqh), 120px) !important; }
+body.ingame .fighter .fi b { font-size: clamp(19px, min(13cqi, 9cqh), 40px); }
+body.ingame .fighter .fi p { font-size: clamp(14px, min(7.6cqi, 5.4cqh), 24px); color: var(--ink); line-height: 1.45; -webkit-line-clamp: 6; max-width: 22em; margin-inline: auto; }
+body.ingame .fighter .tally { font-size: clamp(14px, min(6cqi, 4.5cqh), 24px); }
+body.ingame .fighter .tally b { font-size: clamp(18px, min(9cqi, 7cqh), 36px); }
+body.ingame .fighter .gave .mini { font-size: clamp(12px, min(5cqi, 3.6cqh), 18px); }
+body.ingame .fighter .tapme { font-size: clamp(13px, min(5.5cqi, 4cqh), 20px); }
+@media (max-height: 720px) { body.ingame .fighter .fi p { -webkit-line-clamp: 3; } }
+
+body.ingame #panel { overflow: hidden; padding: 6px 12px 12px 10px; margin-inline: -8px; }
+body.ingame #panel.scroll { overflow-y: auto; scrollbar-width: thin; }
+body.ingame .fighter.drop { transform: scale(1.02) rotate(-.6deg); }
 @media (prefers-reduced-motion: reduce) { * { animation: none !important; transition: none !important; } }
 </style>
 </head>
@@ -2137,6 +2152,7 @@ const App = {
     if (showStage) this.stageOverlay(v); else { $('#reveal').hidden = true; this.revealToken = null; }
     if (!this.dragging) {
       this.put('#panel', 'panel', this.panelHtml(v));
+      $('#panel').classList.toggle('scroll', v.phase === 'lobby' || v.phase === 'final' || ((v.phase === 'battle' || v.phase === 'result') && window.innerWidth >= 1000));
       const showHand = v.phase === 'cards' && !v.mySub && v.hand.length > 0;
       $('#handbar').hidden = !showHand;
       if (showHand) this.put('#handbar', 'hand', this.handHtml(v)); else this.last.hand = '';
