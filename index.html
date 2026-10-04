@@ -441,9 +441,9 @@ body.ingame #panel .betbox.sticky-actions { padding: 10px 12px; }
 @media (prefers-reduced-motion: reduce) { * { animation: none !important; transition: none !important; } }
 
 /* v6 cards */
-.card.bet { --k: #b5e48c; } .mini.bet { --k: #b5e48c; }
-.card.link { --k: #f4acb7; } .mini.link { --k: #f4acb7; }
-.card.hand { --k: #a2d2ff; } .mini.hand { --k: #a2d2ff; }
+.card.bet { --k: #f7e15a; } .mini.bet { --k: #f7e15a; }
+.card.link { --k: #e58ad6; } .mini.link { --k: #e58ad6; }
+.card.trick { --k: #d2bc96; } .mini.trick { --k: #d2bc96; }
 .fighter.pendsrc { outline: 3px dashed #e5484d; outline-offset: 2px; opacity: .75; }
 .pendtip { background: #fff3bf; border: 2px solid var(--ink); border-radius: 10px; padding: 6px 10px; animation: pendp 1.2s ease-in-out infinite; }
 @keyframes pendp { 50% { background: #ffe066; } }
@@ -457,6 +457,7 @@ body.ingame #panel .betbox.sticky-actions { padding: 10px 12px; }
 .intel .mini { margin: 1px 2px; font-size: 12px; }
 .pnote { display: block; font-size: 12px; color: #6c757d; }
 .toastn { position: fixed; left: 50%; top: 70px; transform: translateX(-50%); z-index: 70; background: #fffdf7; border: 2.5px solid var(--ink); border-radius: 10px; box-shadow: 4px 4px 0 var(--ink); padding: 8px 16px; font-size: 18px; font-weight: 700; transition: opacity .4s, transform .4s; }
+.dexh .dext { display: block; font-size: 13px; font-weight: 400; color: #6c757d; margin-top: 2px; }
 .toastn.out { opacity: 0; transform: translate(-50%, -12px); }
 </style>
 </head>
@@ -472,7 +473,7 @@ body.ingame #panel .betbox.sticky-actions { padding: 10px 12px; }
     <div>
       <h1><span>球球</span>擂台</h1>
       <div class="sub">~ ball arena, notebook edition ~</div>
-      <p class="lede">126 種能力球在擂台裡互撞對打。每局大家祕密出牌，從 242 種卡牌裡挑增強、削弱、讓傷害正負顛倒，或是專門搞亂別人出牌的操控牌，再押籌碼賭誰會贏。</p>
+      <p class="lede">126 種能力球在擂台裡互撞對打。每局大家祕密出牌，從 242 種卡牌裡挑增強、削弱、讓傷害正負顛倒、把兩顆球綁在一起的關係牌、玩籌碼的下注牌，或是專門搞亂別人出牌的操控牌，再押籌碼賭誰會贏。</p>
       <div class="doodle" id="doodle"></div>
     </div>
     <div class="entry sk">
@@ -485,14 +486,14 @@ body.ingame #panel .betbox.sticky-actions { padding: 10px 12px; }
     </div>
   </div>
   <div class="wrap rules">
-    <div data-n="1"><b>選手登場</b><p>每局隨機抽出 2～4 顆能力球，房主可以重抽。</p></div>
-    <div data-n="2"><b>祕密丟牌</b><p>大家同時出牌，想丟幾張給哪顆球都行。別人只看得到每顆球收到幾張。</p></div>
+    <div data-n="1"><b>選手登場</b><p>每局隨機抽出能力球（2～20 顆可設定），房主可以鎖定幾顆再重抽；也可以開選秀模式輪流挑。</p></div>
+    <div data-n="2"><b>祕密丟牌</b><p>大家同時出牌，想丟幾張給哪顆球都行，關係牌丟完要再選第二顆球。別人只看得到每顆球收到幾張。</p></div>
     <div data-n="3"><b>下注</b><p>押籌碼賭誰會贏（最少 10）。押中的人按比例分掉整個獎池，最少拿回押注的 1.5 倍。</p></div>
     <div data-n="4"><b>揭牌開打</b><p>牌一張張翻開飛到選手身上，然後開打。打完設定局數，籌碼最多的人贏。</p></div>
   </div>
   <div class="wrap">
     <details class="dexw sk"><summary>選手圖鑑（126 種）</summary><div id="dex"></div></details>
-    <details class="dexw sk"><summary>卡牌一覽（200 種）</summary><div id="cardDex"></div></details>
+    <details class="dexw sk"><summary>卡牌一覽（242 種）</summary><div id="cardDex"></div></details>
   </div>
   <footer class="foot">房主的頁面要保持開著，朋友才連得進來。</footer>
 </main>
@@ -2604,10 +2605,10 @@ C('crown', '王者壓力', 'debuff', 1, '它的血量比例是全場最高時，
 C('mobbed', '以寡擊眾', 'buff', 1, '身邊 200 內有 3 顆以上敵人時，受到傷害 -35%', m => { m.mobbed = (m.mobbed || 0) + 1; });
 C('stagefright', '怯場', 'debuff', 1, '只剩兩顆球時，傷害只剩一半', m => { m.stagefright = 1; });
 // 手牌牌（丟給任何一顆球都可以，丟出去馬上生效）
-C('draw2', '抽兩張', 'hand', 1, '馬上再抽兩張牌（丟給哪顆球都一樣）', null);
-C('swapHand', '換手', 'hand', 1, '跟隨機一位玩家交換剩下的手牌（丟給哪顆球都一樣）', null);
-C('stealC', '偷一張', 'hand', 1, '從隨機一位玩家手上偷一張牌，對方不知道被偷了什麼（丟給哪顆球都一樣）', null);
-C('reserve', '預約', 'hand', 2, '這顆球這局收到的牌全部留到下一局才生效，下一局它一定會出場（最後一局無效）', null);
+C('draw2', '抽兩張', 'trick', 1, '馬上再抽兩張牌（丟給哪顆球都一樣）', null);
+C('swapHand', '換手', 'trick', 1, '跟隨機一位玩家交換剩下的手牌（丟給哪顆球都一樣）', null);
+C('stealC', '偷一張', 'trick', 1, '從隨機一位玩家手上偷一張牌，對方不知道被偷了什麼（丟給哪顆球都一樣）', null);
+C('reserve', '預約', 'trick', 2, '這顆球這局收到的牌全部留到下一局才生效，下一局它一定會出場（最後一局無效）', null);
 // 對付新球
 C('antitheft', '防盜鎖', 'buff', 1, '盜賊偷不到這顆球的牌和血量上限', m => { m.antitheft = 1; });
 C('anchor', '錨', 'buff', 1, '不會被傳送門、彈簧、結界、繩索和磁力移動', m => { m.anchor = 1; });
@@ -2617,7 +2618,7 @@ function drawCard() {
   const keys = Object.keys(CARDS); let tot = 0; for (const k of keys) tot += CARDS[k].w;
   let r = Math.random() * tot; for (const k of keys) { r -= CARDS[k].w; if (r <= 0) return k; } return keys[0];
 }
-function resolveChaos() { const keys = Object.keys(CARDS).filter(k => k !== 'chaos' && !['meta', 'bet', 'link', 'hand'].includes(CARDS[k].kind)); return keys[(Math.random() * keys.length) | 0]; }
+function resolveChaos() { const keys = Object.keys(CARDS).filter(k => k !== 'chaos' && !['meta', 'bet', 'link', 'trick'].includes(CARDS[k].kind)); return keys[(Math.random() * keys.length) | 0]; }
 // ---------- resolving "操控" cards that change other players' cards ----------
 const OPP = { hp_up: 'curse', hp_up2: 'curse2', hp_pct: 'age', atk_up: 'weak', atk_up2: 'weak2', spd_up: 'slow', spd_up2: 'slow2', armor: 'fragile', armor2: 'fragile2',
   regen: 'leak', regen2: 'leak2', holy: 'freeze', crit: 'clumsy', dodge: 'unlucky', rate: 'rust', rate2: 'sloth', growth: 'stunt', heavy: 'light', late: 'tired',
@@ -3183,8 +3184,9 @@ const PAY_MIN = 1.5; // 押中保底：至少拿回押注的 1.5 倍
 // ================= GAME (host-authoritative state machine + UI) =================
 const START_CHIPS = 100, MIN_BET = 10, HAND_START = 6, HAND_DRAW = 4, HAND_MAX = 10, MAX_PLAYERS = 8;
 const BOT_NAMES = ['阿呆', '小黑', '胖虎', '豆花', '鐵蛋', '波波', '阿嬤', '旺財'];
-const KIND_LABEL = { buff: '增益', debuff: '削弱', wild: '特殊', flip: '正負顛倒', meta: '操控', bet: '下注', link: '關係', hand: '手牌' };
+const KIND_LABEL = { buff: '增益', debuff: '削弱', wild: '特殊', flip: '正負顛倒', meta: '操控', bet: '下注', link: '關係', trick: '手牌' };
 const RARITY = ['', '', '稀有', '傳說'];
+const KIND_TIP = { meta: '開戰時照出牌順序結算，會改掉別人丟的牌', link: '丟完要再選第二顆球，不能選同一顆、不能取消', bet: '結算籌碼時才生效（內線消息、假消息丟出去馬上生效）', trick: '丟給哪顆球都行，丟出去馬上生效（預約除外）', flip: '讓傷害和回血對調', wild: '有好有壞的怪牌' };
 const BOT_GOOD = new Set(['purge', 'ward', 'thief', 'gather', 'echo', 'copy', 'double', 'upgrade', 'magnetC', 'censor', 'mirrorC', 'flip', 'flipAll', 'flipTime', 'flipTide', 'flipDot', 'gamble', 'glass', 'turtle', 'overload', 'berserk2', 'balloon', 'deathbomb', 'miracle', 'dice', 'coin', 'swap']);
 const $ = s => document.querySelector(s);
 const esc = s => String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -3258,7 +3260,7 @@ class Host {
           const key = p.hand.splice(ci, 1)[0], pl = { pid, card: key, target: ti, turn: G.turn }; G.plays.push(pl);
           const kind = CARDS[key].kind;
           if (kind === 'link' && G.fighters.length >= 2) { G.pend[pid] = G.plays.length - 1; break; }
-          if (kind === 'hand' || key === 'intel' || key === 'fake') this.instantCard(p, pl);
+          if (kind === 'trick' || key === 'intel' || key === 'fake') this.instantCard(p, pl);
           this.afterPlay(p);
         } else { G.sub[pid] = true; this.checkProgress(); }
         break;
@@ -3401,7 +3403,7 @@ class Host {
             let ti = p.fav;
             const others = G.fighters.map((_, i) => i).filter(i => i !== p.fav), oth = () => others[(Math.random() * others.length) | 0];
             if (c.kind === 'debuff' || ((c.kind === 'flip' || c.kind === 'meta') && !BOT_GOOD.has(p.hand[ci])) || ['bookie', 'rival', 'crown', 'stagefright'].includes(p.hand[ci])) ti = oth();
-            else if (p.hand[ci] === 'chaos' || c.kind === 'hand') ti = (Math.random() * G.fighters.length) | 0;
+            else if (p.hand[ci] === 'chaos' || c.kind === 'trick') ti = (Math.random() * G.fighters.length) | 0;
             this.action(p.id, { t: 'play', card: ci, target: ti });
             if (G.pend[p.id] !== undefined) { const o2 = G.fighters.map((_, i) => i).filter(i => i !== ti); this.action(p.id, { t: 'link', target: o2[(Math.random() * o2.length) | 0] }); }
             this.botTimers.push(setTimeout(playOne, rand(700, 2200)));
@@ -4030,7 +4032,7 @@ const App = {
   },
   buildDex() {
     $('#dex').innerHTML = ROSTER.map(k => { const d = DEFS[k]; return '<div class="dx">' + this.ballHtml(k, 38) + '<div><b>' + d.name + '</b><p>' + d.desc + '</p></div></div>'; }).join('');
-    $('#cardDex').innerHTML = ['buff', 'debuff', 'meta', 'link', 'bet', 'hand', 'flip', 'wild'].map(kind => { const ks = Object.keys(CARDS).filter(k => CARDS[k].kind === kind); return '<h4 class="dexh"><span class="hl">' + KIND_LABEL[kind] + '</span> <span>' + ks.length + ' 張</span></h4><div class="cardgrid">' + ks.map(k => this.cardHtml(k)).join('') + '</div>'; }).join('');
+    $('#cardDex').innerHTML = ['buff', 'debuff', 'meta', 'link', 'bet', 'trick', 'flip', 'wild'].map(kind => { const ks = Object.keys(CARDS).filter(k => CARDS[k].kind === kind); return '<h4 class="dexh"><span class="hl">' + KIND_LABEL[kind] + '</span> <span>' + ks.length + ' 張</span>' + (KIND_TIP[kind] ? '<small class="dext">' + KIND_TIP[kind] + '</small>' : '') + '</h4><div class="cardgrid">' + ks.map(k => this.cardHtml(k)).join('') + '</div>'; }).join('');
     const picks = ROSTER.slice().sort(() => Math.random() - 0.5).slice(0, 6);
     $('#doodle').innerHTML = picks.map((k, i) => '<span style="transform:rotate(' + ((i % 2 ? 1 : -1) * (4 + i * 2)) + 'deg) translateY(' + (i % 2 ? 4 : -2) + 'px)">' + this.ballHtml(k, 42) + '</span>').join('');
   },
