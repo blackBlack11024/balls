@@ -241,6 +241,8 @@ footer.foot { text-align: center; color: var(--ink3); font-size: 14px; padding: 
 .rcol { padding: 10px; min-width: 0; background: #fff; }
 .rcol.lost { opacity: .55; }
 .rh { display: flex; align-items: center; gap: 8px; font-size: 18px; }
+.rh .fv { margin-left: auto; flex: none; font-size: 13px; border: 1.5px solid var(--ink); border-radius: 8px; padding: 2px 8px; background: var(--paper); white-space: nowrap; cursor: pointer; font-family: inherit; color: var(--ink); }
+.rdesc { margin: 8px 0 4px; font-size: 16px; line-height: 1.5; }
 .wbadge { margin-left: auto; color: var(--red); border: 2.5px solid var(--red); border-radius: 50%; width: 32px; height: 32px; display: grid; place-items: center; font-weight: 700; transform: rotate(12deg); flex: none; }
 .rplays { list-style: none; margin: 8px 0; padding: 0; display: grid; gap: 5px; }
 .rplays li { display: grid; font-size: 14px; line-height: 1.3; }
@@ -451,7 +453,7 @@ body.ingame #panel .betbox.sticky-actions { padding: 10px 12px; }
     <div>
       <h1><span>球球</span>擂台</h1>
       <div class="sub">~ ball arena, notebook edition ~</div>
-      <p class="lede">100 種能力球在擂台裡互撞對打。每局大家祕密出牌，從 200 種卡牌裡挑增強、削弱、讓傷害正負顛倒，或是專門搞亂別人出牌的操控牌，再押籌碼賭誰會贏。</p>
+      <p class="lede">126 種能力球在擂台裡互撞對打。每局大家祕密出牌，從 200 種卡牌裡挑增強、削弱、讓傷害正負顛倒，或是專門搞亂別人出牌的操控牌，再押籌碼賭誰會贏。</p>
       <div class="doodle" id="doodle"></div>
     </div>
     <div class="entry sk">
@@ -466,11 +468,11 @@ body.ingame #panel .betbox.sticky-actions { padding: 10px 12px; }
   <div class="wrap rules">
     <div data-n="1"><b>選手登場</b><p>每局隨機抽出 2～4 顆能力球，房主可以重抽。</p></div>
     <div data-n="2"><b>祕密丟牌</b><p>大家同時出牌，想丟幾張給哪顆球都行。別人只看得到每顆球收到幾張。</p></div>
-    <div data-n="3"><b>下注</b><p>押籌碼賭誰會贏（最少 10）。押中的人按比例分掉整個獎池。</p></div>
+    <div data-n="3"><b>下注</b><p>押籌碼賭誰會贏（最少 10）。押中的人按比例分掉整個獎池，最少拿回押注的 1.5 倍。</p></div>
     <div data-n="4"><b>揭牌開打</b><p>牌一張張翻開飛到選手身上，然後開打。打完設定局數，籌碼最多的人贏。</p></div>
   </div>
   <div class="wrap">
-    <details class="dexw sk"><summary>選手圖鑑（100 種）</summary><div id="dex"></div></details>
+    <details class="dexw sk"><summary>選手圖鑑（126 種）</summary><div id="dex"></div></details>
     <details class="dexw sk"><summary>卡牌一覽（200 種）</summary><div id="cardDex"></div></details>
   </div>
   <footer class="foot">房主的頁面要保持開著，朋友才連得進來。</footer>
@@ -539,7 +541,7 @@ class World {
     // entries: [{key, mod}]
     this.balls = []; this.proj = []; this.haz = []; this.fx = []; this.events = [];
     this.t = 0; this.hitstop = 0; this.shake = 0; this.margin = 0; this.over = false; this.winner = null; this.ending = 0;
-    this.pairCd = new Map(); this.otAnnounced = false; this.gravity = !!opt.gravity; this.pull = opt.pull ?? 90;
+    this.pairCd = new Map(); this.bumpHooks = []; this.tsT = 0; this.tsTeam = -1; this.otAnnounced = false; this.gravity = !!opt.gravity; this.pull = opt.pull ?? 90;
     SIZE = opt.size || 480; this.size = SIZE;
     const n = entries.length; this.mains = [];
     entries.forEach((en, i) => {
@@ -566,9 +568,10 @@ class World {
   }
   enemies(b) { return this.balls.filter(e => !e.dead && e.team !== b.team); }
   nearest(b, mainsFirst) {
-    let best = null, bd = 1e9, bestM = null, bdm = 1e9;
+    let best = null, bd = 1e9, bestM = null, bdm = 1e9; const ob = this.owner(b), pk = ob.pacts && ob.pacts.size;
     for (const e of this.balls) {
       if (e.dead || e.team === b.team) continue;
+      if (pk && ob.pacts.has(this.owner(e).id)) continue;
       const d = Math.hypot(e.x - b.x, e.y - b.y);
       if (d < bd) { bd = d; best = e; }
       if (!e.minion && d < bdm) { bdm = d; bestM = e; }
@@ -582,6 +585,8 @@ class World {
   ring(x, y, r, color, life) { this.fx.push({ k: 'ring', x, y, r, c: color, life: life || 0.4, max: life || 0.4 }); }
 
   owner(b) { return b.minion && b.master ? b.master : b; }
+  pact(a, b) { if (a.pacts) a.pacts.add(b.id); else a.pacts = new Set([b.id]); if (b.pacts) b.pacts.add(a.id); else b.pacts = new Set([a.id]); }
+  unpact(a, b) { if (a && a.pacts) a.pacts.delete(b.id); if (b && b.pacts) b.pacts.delete(a.id); }
   invActive(b) {
     const m = b.mod; let n = m.invIn;
     for (const w of m.invWin) if (this.t >= w[0] && this.t < w[1]) n++;
@@ -596,12 +601,15 @@ class World {
     if (m.tired) f *= Math.max(0.3, 1 - m.tired * Math.floor(this.t / 10));
     if (m.lastStand && b.hp < b.maxHp * 0.3) f *= 2;
     if (b.rage) f *= 1 + b.rage;
+    if (b.possT > 0) f *= 1.3;
+    if (b.outBoost) f *= b.outBoost;
     return f;
   }
   inFactor(b) {
     const m = b.mod; let f = m.dmgIn;
     if (m.lastStand && b.hp < b.maxHp * 0.3) f *= 0.7;
     if (m.decay) f *= 1 + m.decay * Math.floor(this.t / 10);
+    if (b.inMul) f *= b.inMul;
     return f;
   }
   heal(b, amt, show) {
@@ -624,6 +632,8 @@ class World {
   damage(t, amt, src, o = {}) {
     if (this.locked !== undefined && !t.minion) return false;
     if (!t || t.dead || amt <= 0) return false;
+    if (src) { const so0 = this.owner(src), to0 = this.owner(t); if (so0 !== to0 && so0.pacts && so0.pacts.has(to0.id)) return false; }
+    if (t.bind) { const p = t.bind; t.bind = null; if (p.bind === t) p.bind = null; this.text(t.x, t.y - t.r - 14, '影縛解除', '#9aa3b5', 13); }
     if (t.ghost > 0) { this.text(t.x, t.y - t.r - 6, '閃避', '#cdbfff', 13); return false; }
     if (t.inv > 0) { this.text(t.x, t.y - t.r - 6, '無敵', '#ffe08a', 13); return false; }
     const so = src ? this.owner(src) : null, sm = so ? so.mod : null, tm = t.mod;
@@ -641,6 +651,7 @@ class World {
       if (sm.backstab && src) { const vs = Math.hypot(t.vx, t.vy) || 1; if (((src.x - t.x) * t.vx + (src.y - t.y) * t.vy) / vs < -t.r * 0.3) { mul *= sm.backstab; this.text(t.x, t.y - t.r - 20, '背刺', '#b38cff', 13); } }
     }
     if (t.vuln) mul *= 1 + t.vuln;
+    if (so && so.focus === t && so.focusMul) mul *= so.focusMul;
     amt = amt * mul * this.inFactor(t);
     if (so && tm.bounty) amt += tm.bounty;
     if (tm.brittle && amt > 5) amt += tm.brittle;
@@ -734,6 +745,8 @@ class World {
       t.rewound = 1; t.hp = Math.max(20, t.hist[0][1]); t.inv = 1; this.text(t.x, t.y - t.r - 10, '時光倒流！', '#80deea', 22); this.ring(t.x, t.y, 90, '#80deea', 0.6); return;
     }
     t.dead = true; t.hp = 0;
+    if (t.possBy) { t.possBy = null; t.possT = 0; }
+    if (!t.minion && t.def.onDeath) t.def.onDeath(t, this, src);
     if (!t.minion && t.mod.lastWill && src) { const k = this.owner(src); if (k && !k.dead) { this.addPoison(k, 10); this.text(k.x, k.y - k.r - 12, '遺言：中毒', '#9be35a', 15); } }
     if (!t.minion) {
       this.burst(t.x, t.y, t.color, 40); this.ring(t.x, t.y, 120, t.color, 0.7);
@@ -743,7 +756,9 @@ class World {
       const alive = this.mains.filter(b => !b.dead);
       if (alive.length <= 1 && !this.ending) {
         // last one standing: lock the result, protect the survivor, play the final-blow slow motion
-        this.ending = 1.0; this.locked = alive.length ? alive[0].team : -1; this.slow = 1.8; this.hitstop = 0.06;
+        const sv = alive[0], ow = sv && sv.possT > 0 && sv.possBy ? sv.possBy : sv;
+        if (ow && ow !== sv) this.text(sv.x, sv.y - sv.r - 24, '附身者勝利！', '#b38cff', 22);
+        this.ending = 1.0; this.locked = ow ? ow.team : -1; this.slow = 1.8; this.hitstop = 0.06;
         this.ev({ k: 'finale', x: Math.round(t.x), y: Math.round(t.y), c: t.color, w: alive.length ? alive[0].color : '#fff' });
       }
       if (t.mod.deathBomb) {
@@ -853,7 +868,7 @@ class World {
     this.shake = Math.max(0, this.shake - dt * 40);
     if (this.over) return;
     if (this.hitstop > 0) { this.hitstop -= dt; return; }
-    this.t += dt;
+    this.t += dt; this.dt = dt;
     if (this.ending > 0) {
       this.ending -= dt;
       if (this.ending <= 0) {
@@ -868,8 +883,13 @@ class World {
     }
     const L = this.margin, R = SIZE - this.margin, balls = this.balls;
 
+    if (this.tsT > 0) this.tsT -= dt;
+    const solids = this.haz.filter(h => h.seg && !h.dead);
     for (const b of balls) {
       if (b.dead) continue;
+      if (this.tsT > 0 && b.team !== this.tsTeam) continue;
+      if (b.possT > 0) { b.possT -= dt; const e = this.nearest(b, true); if (e) steer(b, e.x, e.y, 420, dt); if (b.possT <= 0) { b.possBy = null; this.text(b.x, b.y - b.r - 14, '附身解除', '#b38cff', 14); } }
+      if (b.slipT > 0) b.slipT -= dt;
       b.flash -= dt; b.ghost -= dt; b.fireCd -= dt; b.poisonCd -= dt; b.dotT -= dt; b.wallCd -= dt; b.inv -= dt;
       if (b.frozen > 0) b.frozen -= dt;
       if (b.burn > 0) { this.dot(b, b.burn * 0.45 * dt, '#ffa24a'); b.burnT += dt; if (b.burnT > 1.5) { b.burn--; b.burnT = 0; } }
@@ -892,9 +912,11 @@ class World {
         else if (!b.minion && this.pull) { const e = this.nearest(b, true); if (e) steer(b, e.x, e.y, this.pull, dt); }
         for (const w of b.weapons) w.a += w.spin * w.dir * dt * rt * (1 - b.chill * 0.6);
       }
+      if (b.bind) { if (b.bind.dead || b.bind.bind !== b) b.bind = null; else { b.vx = 0; b.vy = 0; continue; } }
+      if (b.pinned) { b.pinned(b, this, dt); continue; }
       // speed regulation
       const sp = Math.hypot(b.vx, b.vy);
-      const target = (b.def.speedOf ? b.def.speedOf(b) : b.speed) * (1 - b.chill * 0.8) * b.spdMul * (b.mod.ramp ? Math.min(2.5, 1 + b.mod.ramp * this.t) : 1);
+      const target = (b.def.speedOf ? b.def.speedOf(b) : b.speed) * (1 - b.chill * 0.8) * b.spdMul * (b.mod.ramp ? Math.min(2.5, 1 + b.mod.ramp * this.t) : 1) * (b.slipT > 0 ? 1.7 : 1);
       if (b.frozen > 0) { b.vx *= 0.8; b.vy *= 0.8; }
       else if (!this.gravity) {
         if (sp < 1) { const a = rand(0, TAU); b.vx = Math.cos(a) * target; b.vy = Math.sin(a) * target; }
@@ -904,7 +926,10 @@ class World {
         if (sp > target * 2.4) { b.vx *= 1 - dt * 1.5; b.vy *= 1 - dt * 1.5; }
       }
       b.x += b.vx * dt; b.y += b.vy * dt;
+      for (const h of solids) { if (h.team === b.team) continue; const q = segNear(b.x, b.y, h); if (q.d < h.r + b.r) { const nx = (b.x - q.x) / (q.d || 1), ny = (b.y - q.y) / (q.d || 1); b.x = q.x + nx * (h.r + b.r); b.y = q.y + ny * (h.r + b.r); const vn = b.vx * nx + b.vy * ny; if (vn < 0) { b.vx -= 2 * vn * nx; b.vy -= 2 * vn * ny; } h.onBump && h.onBump(h, b, this); } }
+      if (b.boxed) { const h = b.boxed; if (h.dead) b.boxed = null; else { const lo = h.r - b.r; if (b.x < h.x - lo) { b.x = h.x - lo; b.vx = Math.abs(b.vx); } if (b.x > h.x + lo) { b.x = h.x + lo; b.vx = -Math.abs(b.vx); } if (b.y < h.y - lo) { b.y = h.y - lo; b.vy = Math.abs(b.vy); } if (b.y > h.y + lo) { b.y = h.y + lo; b.vy = -Math.abs(b.vy); } } }
       let hit = false;
+      if (b.wrap) { const W = R - L; if (b.x < L) b.x += W; else if (b.x > R) b.x -= W; if (b.y < L) b.y += W; else if (b.y > R) b.y -= W; continue; }
       if (b.x - b.r < L) { b.x = L + b.r; b.vx = Math.abs(b.vx); hit = true; }
       if (b.x + b.r > R) { b.x = R - b.r; b.vx = -Math.abs(b.vx); hit = true; }
       if (b.y - b.r < L) { b.y = L + b.r; b.vy = Math.abs(b.vy); hit = true; }
@@ -925,7 +950,7 @@ class World {
         b.x += nx * ov * ma / (ma + mb); b.y += ny * ov * ma / (ma + mb);
         const rel = (b.vx - a.vx) * nx + (b.vy - a.vy) * ny;
         if (rel < 0) { const jj = -2 * rel / (1 / ma + 1 / mb); a.vx -= jj / ma * nx; a.vy -= jj / ma * ny; b.vx += jj / mb * nx; b.vy += jj / mb * ny; }
-        if (a.team !== b.team) { if (a.mod.sticky) this.addChill(b, 0.12, true); if (b.mod.sticky) this.addChill(a, 0.12, true); this.contact(a, b); this.contact(b, a); if (!a.minion && !b.minion) this.ev({ k: 'bump' }); }
+        if (a.team !== b.team) { if (a.mod.sticky) this.addChill(b, 0.12, true); if (b.mod.sticky) this.addChill(a, 0.12, true); this.contact(a, b); this.contact(b, a); if (!a.minion && !b.minion) this.ev({ k: 'bump' }); if (this.bumpHooks.length) for (const f of this.bumpHooks) f(a, b, this); }
       }
     }
     // weapons
@@ -972,6 +997,8 @@ class World {
     // projectiles
     for (const p of this.proj) {
       if (p.dead) continue;
+      if (p.frz) { p.frz = 0; continue; }
+      if (this.tsT > 0 && (p.team !== this.tsTeam || p.tsHold)) continue;
       p.t += dt; p.life -= dt; if (p.life <= 0) { p.dead = true; continue; }
       p.update && p.update(p, this, dt); if (p.dead) continue;
       p.x += p.vx * dt; p.y += p.vy * dt;
@@ -981,6 +1008,8 @@ class World {
       if (p.y < L + p.r) { p.y = L + p.r; p.vy = Math.abs(p.vy); out = true; }
       if (p.y > R - p.r) { p.y = R - p.r; p.vy = -Math.abs(p.vy); out = true; }
       if (out) { if (p.bounces > 0) p.bounces--; else { p.dead = true; this.spark(p.x, p.y, p.color || '#ccc', 3); continue; } }
+      for (const h of solids) if (h.team !== p.team && segNear(p.x, p.y, h).d < h.r + p.r) { p.dead = true; this.spark(p.x, p.y, '#ffe9a8', 4); break; }
+      if (p.dead) continue;
       let blocked = false;
       for (const [b, w] of ws) {
         if (b.dead || b.team === p.team || !w.blocks) continue;
@@ -1002,6 +1031,7 @@ class World {
       for (const e of balls) {
         if (e.dead || e.team === p.team || e.ghost > 0 || p.hit.has(e.id)) continue;
         if (Math.hypot(e.x - p.x, e.y - p.y) < e.r + p.r) {
+          if (e.def.eatProj && e.def.eatProj(e, p, this)) { p.dead = true; break; }
           const rc = (e.mod.reflectProj || 0) + (e.s.refl || 0);
           if (rc && p.rf !== e.id && Math.random() < rc) {
             const sp0 = Math.hypot(p.vx, p.vy), d0 = Math.hypot(p.x - e.x, p.y - e.y) || 1;
@@ -1028,6 +1058,7 @@ class World {
         if (Math.hypot(e.x - h.x, e.y - h.y) < h.r + e.r * 0.6) h.touch(h, e, this);
       }
     }
+    for (const b of balls) if (!b.dead && !b.minion && b.def.post) b.def.post(b, this, dt);
     if (this.balls.some(b => b.dead && b.minion)) this.balls = this.balls.filter(b => !(b.dead && b.minion));
     this.proj = this.proj.filter(p => !p.dead);
     this.haz = this.haz.filter(h => !h.dead);
@@ -1035,6 +1066,7 @@ class World {
 }
 
 // ---------- helpers for fighters ----------
+function segNear(px, py, h) { const dx = h.x2 - h.x, dy = h.y2 - h.y, L2 = dx * dx + dy * dy || 1, t = clamp(((px - h.x) * dx + (py - h.y) * dy) / L2, 0, 1), x = h.x + dx * t, y = h.y + dy * t; return { x, y, d: Math.hypot(px - x, py - y), t }; }
 function minionCount(w, b) { let n = 0; for (const m of w.balls) if (m.master === b && !m.dead) n++; return n; }
 function rayLen(x, y, a, L, R) {
   const dx = Math.cos(a), dy = Math.sin(a); let t = 2000;
@@ -1174,9 +1206,9 @@ defFighter({ key: 'bomber', name: '炸彈客', glyph: '爆', color: '#ff5722', s
       } });
   }, stat: b => '範圍 ' + b.s.R });
 
-defFighter({ key: 'orbit', name: '衛星', glyph: '星', color: '#26c6da', speed: 210, desc: '身邊環繞衛星球，可擋子彈。每次命中，多一顆衛星。',
-  init(b) { b.weapons.push(weapon({ kind: 'orbs', look: 'orbs', n: 3, off: 34, orbR: 8, spin: 4, dmg: 2, cd: 0.2, knock: 120 })); },
-  onHit(b, e, w) { w.h = (w.h || 0) + 1; w.n = Math.min(12, 3 + w.h); }, stat: b => '衛星 ' + b.weapons[0].n });
+defFighter({ key: 'orbit', name: '衛星', glyph: '星', color: '#26c6da', speed: 210, desc: '遠遠環繞著衛星球，可擋子彈。每命中 3 次，多一顆衛星（最多 6 顆）。',
+  init(b) { b.weapons.push(weapon({ kind: 'orbs', look: 'orbs', n: 3, off: 62, orbR: 8, spin: 2.4, dmg: 1.5, cd: 0.25, knock: 120 })); },
+  onHit(b, e, w) { w.h = (w.h || 0) + 1; w.n = Math.min(6, 3 + Math.floor(w.h / 3)); }, stat: b => '衛星 ' + b.weapons[0].n });
 
 defFighter({ key: 'ghost', name: '幽影', glyph: '影', color: '#9575cd', speed: 220, hp: 90, desc: '定時瞬移到敵人身邊斬擊，瞬移後短暫無法被打中。每斬中 2 次，傷害 +1。',
   init(b) { b.s.cd = 1.8; b.s.dmg = 3; },
@@ -1543,9 +1575,14 @@ defFighter({ key: 'hero', name: '勇者', glyph: '勇', color: '#3a86ff', speed:
   update(b, w, dt) { every(b, 'cd', dt, 4, () => { w.ring(b.x, b.y, 100, '#ffe45c', 0.4); w.fx.push({ k: 'slash', x: b.x, y: b.y, a: rand(0, TAU), r: 90, c: '#ffe45c', life: 0.3, max: 0.3 }); aoe(w, b, b.x, b.y, 100, 8, { knock: 300, color: '#ffe45c' }); }); },
   onHit(b, e, wp) { wp.dmg += 0.5; }, stat: b => '劍 ' + fmt(b.weapons[0].dmg) });
 
-defFighter({ key: 'batswarm', name: '蝙蝠群', glyph: '蝠', color: '#2b2d42', speed: 225, hp: 90, desc: '一群蝙蝠圍著飛，咬到敵人就幫主人吸血。每咬 3 次，多一隻。',
-  init(b) { b.weapons.push(weapon({ kind: 'orbs', look: 'orbs', n: 3, off: 26, orbR: 6, spin: 5, dmg: 1.2, cd: 0.2, knock: 60 })); },
-  onHit(b, e, wp, w) { w.heal(b, 0.8); wp.h = (wp.h || 0) + 1; if (wp.h % 3 === 0) wp.n = Math.min(10, wp.n + 1); }, stat: b => '蝙蝠 ' + b.weapons[0].n });
+defFighter({ key: 'batswarm', name: '蝙蝠群', glyph: '蝠', color: '#2b2d42', speed: 215, hp: 95, desc: '放出小蝙蝠到處亂飛，會穿過牆壁從另一邊出現。咬到敵人就幫主人吸血。每咬 4 次，蝙蝠上限多一隻。',
+  init(b) { b.s.cap = 3; b.s.bites = 0; b.s.cd = 0.3; },
+  update(b, w, dt) { b.s.cd -= dt; if (b.s.cd > 0) return; b.s.cd = 1.3; if (minionCount(w, b) >= b.s.cap) return;
+    const a = rand(0, TAU), m = w.spawn(DEFS.bat, b.team, b.x + Math.cos(a) * b.r, b.y + Math.sin(a) * b.r, { r: 5, hp: 3, speed: 290, minion: true, master: b, color: '#3d405b', contactDmg: 1, homing: 240 });
+    m.wrap = 1; m.vx = Math.cos(a) * 290; m.vy = Math.sin(a) * 290; w.ev({ k: 'summon' }); },
+  stat: (b, w) => '蝙蝠 ' + (w ? minionCount(w, b) : 0) + '/' + b.s.cap });
+defFighter({ key: 'bat', hidden: true, name: '蝙蝠', glyph: '', color: '#3d405b', speed: 290, contactCd: 0.5,
+  onContact(b, e, w) { const M = b.master; if (!M || M.dead) return; w.heal(M, 1, true); M.s.bites++; if (M.s.bites % 4 === 0) M.s.cap = Math.min(7, M.s.cap + 1); } });
 
 defFighter({ key: 'gunslinger', name: '雙槍俠', glyph: '雙', color: '#a0522d', speed: 230, desc: '連開 6 槍再換彈。每命中 6 發，彈匣多一發。',
   init(b) { b.s.ammo = 6; b.s.mag = 6; b.s.cd = 0.5; b.s.h = 0; },
@@ -1715,7 +1752,7 @@ defFighter({ key: 'snowman', name: '雪人', glyph: '雪', color: '#90a8c3', spe
   stat: () => '雪球' });
 
 defFighter({ key: 'mimic', name: '模仿者', glyph: '仿', color: '#b5838d', speed: 215, desc: '開戰時隨機變成另一種選手的能力，每場都不一樣。',
-  init(b, w) { const pool = ROSTER.filter(k => k !== 'mimic'); const k = pool[(Math.random() * pool.length) | 0]; b.s.mk = k; const d = DEFS[k]; d.init && d.init(b, w); b.homing = b.homing || 0; },
+  init(b, w) { const pool = ROSTER.filter(k => k !== 'mimic' && k !== 'contract'); const k = pool[(Math.random() * pool.length) | 0]; b.s.mk = k; const d = DEFS[k]; d.init && d.init(b, w); b.homing = b.homing || 0; },
   update(b, w, dt) { const d = DEFS[b.s.mk]; d && d.update && d.update(b, w, dt); },
   onHit(b, e, wp, w) { const d = DEFS[b.s.mk]; d && d.onHit && d.onHit(b, e, wp, w); },
   onProjHit(b, e, p, w) { const d = DEFS[b.s.mk]; d && d.onProjHit && d.onProjHit(b, e, p, w); },
@@ -1729,6 +1766,506 @@ defFighter({ key: 'mimic', name: '模仿者', glyph: '仿', color: '#b5838d', sp
   aura(b) { const d = DEFS[b.s.mk]; return d && d.aura ? d.aura(b) : null; },
   tether(b) { const d = DEFS[b.s.mk]; return d && d.tether ? d.tether(b) : null; },
   stat: (b, w) => '模仿：' + (DEFS[b.s.mk] ? DEFS[b.s.mk].name : '?') });
+
+// ---------- FIGHTERS 101-126 (v5) ----------
+const foeMains = (w, b) => w.mains.filter(x => !x.dead && x.team !== b.team && !(b.pacts && b.pacts.has(x.id)));
+function nearestMain(w, b, filt) { let best = null, bd = 1e9; for (const e of w.mains) { if (e.dead || e.team === b.team || (filt && !filt(e))) continue; if (b.pacts && b.pacts.has(e.id)) continue; const d = Math.hypot(e.x - b.x, e.y - b.y); if (d < bd) { bd = d; best = e; } } return best; }
+function wallPoint(w, b) {
+  const L = w.margin, R = SIZE - w.margin, ds = [[b.x - L, 1, 0, L, b.y], [R - b.x, -1, 0, R, b.y], [b.y - L, 0, 1, b.x, L], [R - b.y, 0, -1, b.x, R]];
+  ds.sort((a, c) => a[0] - c[0]); const q = ds[0]; return { x: q[3], y: q[4], nx: q[1], ny: q[2] };
+}
+const mark = (w, e, c) => { e.markC = c; e.markT = w.t + 0.25; };
+const myHaz = (w, b, kind) => w.haz.filter(h => !h.dead && h.owner === b && h.kind === kind);
+
+// 1 建築師
+defFighter({ key: 'architect', name: '建築師', glyph: '建', color: '#c08552', speed: 215, hp: 105, desc: '每 3.5 秒在最近的敵人面前蓋一道牆，敵人撞到會受傷、子彈也穿不過去（自己人可以穿過）。牆被撞越多次，之後蓋得越長。',
+  init(b) { b.s.len = 80; b.s.bumps = 0; b.weapons.push(weapon({ kind: 'blade', look: 'hammer', len: 34, width: 6, head: 9, spin: 3.5, dmg: 2, cd: 0.4, knock: 220 })); },
+  update(b, w, dt) {
+    every(b, 'cd', dt, 3.5, () => {
+      const e = nearestMain(w, b); if (!e) return;
+      const ws = myHaz(w, b, 'wall'); if (ws.length >= 4) ws[0].dead = true;
+      const sp = Math.hypot(e.vx, e.vy), a = sp > 20 ? Math.atan2(e.vy, e.vx) : angTo(e, b), cx = e.x + Math.cos(a) * (e.r + 24), cy = e.y + Math.sin(a) * (e.r + 24), px = -Math.sin(a), py = Math.cos(a), L = b.s.len / 2;
+      w.hazard({ kind: 'wall', seg: 1, x: cx - px * L, y: cy - py * L, x2: cx + px * L, y2: cy + py * L, r: 5, life: 6, team: b.team, owner: b, color: '#c08552', hc: new Map(), noSuck: 1,
+        onBump(h, v, W) { if (!zoneHit(h, v, W, 0.4)) return; W.damage(v, 2, h.owner, { noStop: true, color: '#e0b084' }); const o = h.owner; o.s.bumps++; if (o.s.bumps % 3 === 0) o.s.len = Math.min(200, o.s.len + 15); },
+        snap: h => [r0(h.x2), r0(h.y2), h.color] });
+      w.ev({ k: 'summon' });
+    });
+  }, stat: b => '牆長 ' + b.s.len });
+
+// 2 傳送門
+function mkPortal(w, b, x, y, idx) {
+  return w.hazard({ kind: 'portal', x, y, r: 18, life: 5, team: -99, owner: b, color: b.color, idx, noSuck: 1,
+    update(h, W) { if (!h.pair || h.pair.dead) return; for (const p of W.proj) { if (p.dead || p.pcd > W.t) continue; if (Math.hypot(p.x - h.x, p.y - h.y) < h.r) { p.x = h.pair.x; p.y = h.pair.y; p.pcd = W.t + 0.5; } } },
+    touch(h, e, W) {
+      if (!h.pair || h.pair.dead || e.pcd > W.t || e.boxed || e.pinned || e.bind) return;
+      W.fx.push({ k: 'blink', x1: e.x, y1: e.y, x2: h.pair.x, y2: h.pair.y, c: '#b388ff', life: 0.3, max: 0.3 });
+      e.x = h.pair.x; e.y = h.pair.y; e.pcd = W.t + 1; W.ev({ k: 'blink' });
+      if (e === h.owner) { const t = nearestMain(W, e); if (t) { const a = angTo(e, t); e.vx = Math.cos(a) * 540; e.vy = Math.sin(a) * 540; } e.s.amb = 1.2; }
+    },
+    snap: h => [h.color, h.idx] });
+}
+defFighter({ key: 'portal', name: '傳送門', glyph: '門', color: '#7b2ff7', speed: 225, hp: 100, desc: '每 4 秒在腳下和敵人附近各開一扇門，馬上穿過去偷襲，穿門後 1 秒撞人特別痛。任何球或子彈走進門，都會從另一扇出來。',
+  init(b) { b.s.amb = 0; b.weapons.push(weapon({ kind: 'blade', look: 'dagger', len: 34, width: 5, spin: 7, dmg: 3, cd: 0.3, knock: 160 })); },
+  update(b, w, dt) {
+    b.s.amb -= dt;
+    every(b, 'cd', dt, 4, () => {
+      const e = nearestMain(w, b); if (!e) return;
+      for (const h of myHaz(w, b, 'portal')) h.dead = true;
+      const a = rand(0, TAU), m = w.margin + 30, bx = clamp(e.x + Math.cos(a) * (e.r + 70), m, SIZE - m), by = clamp(e.y + Math.sin(a) * (e.r + 70), m, SIZE - m);
+      const A = mkPortal(w, b, b.x, b.y, 0), B = mkPortal(w, b, bx, by, 1); A.pair = B; B.pair = A;
+    });
+  }, contact: b => (b.s.amb > 0 ? 6 : 1.5), stat: b => (b.s.amb > 0 ? '偷襲！' : '開門') });
+
+// 3 盜賊
+function clampMod(m) {
+  m.dmgIn = clamp(m.dmgIn, 0.2, 4); m.dmgOut = clamp(m.dmgOut, 0.15, 5); m.rate = clamp(m.rate, 0.3, 3); m.dodge = Math.min(0.6, m.dodge); m.crit = Math.min(0.8, m.crit);
+  m.reflectProj = Math.min(0.8, m.reflectProj); m.knockOut = clamp(m.knockOut, -3, 4);
+}
+function stealFrom(w, b, e) {
+  const ks = (e.mod.keys || []).filter(k => CARDS[k] && CARDS[k].apply);
+  if (ks.length) {
+    const k = ks[(Math.random() * ks.length) | 0], rest = e.mod.keys.slice(); rest.splice(rest.indexOf(k), 1);
+    const old = e.mod, nm = buildMod(rest);
+    for (const f of ['revive', 'reviveFull']) nm[f] = Math.min(nm[f], old[f]);
+    e.mod = nm;
+    const bm = b.mod; CARDS[k].apply(bm); (bm.keys = bm.keys || []).push(k); clampMod(bm);
+    b.s.got++; w.text(b.x, b.y - b.r - 16, '偷到「' + CARDS[k].name + '」', '#ffd166', 15); w.ev({ k: 'blink' });
+  } else if (e.maxHp > 30) {
+    e.maxHp -= 6; e.hp = Math.min(e.hp, e.maxHp); b.maxHp += 6; b.hp += 6; b.s.got++;
+    w.text(b.x, b.y - b.r - 16, '偷走 6 血量上限', '#ffd166', 13);
+  }
+}
+defFighter({ key: 'thief', name: '盜賊', glyph: '盜', color: '#495057', speed: 245, hp: 90, desc: '匕首砍到敵人時，偷走它身上一張生效的牌變成自己的（每 2 秒一次）。沒牌可偷就偷 6 點血量上限。每偷一次，匕首更痛。',
+  init(b) { b.s.got = 0; b.weapons.push(weapon({ kind: 'blade', look: 'dagger', len: 38, width: 5, spin: 6.5, dmg: 3, cd: 0.3, knock: 140 })); },
+  onHit(b, e, wp, w) { if (e.minion || b.s.sc > w.t) return; b.s.sc = w.t + 2; stealFrom(w, b, e); wp.dmg += 0.5; },
+  stat: b => '偷到 ' + b.s.got });
+
+// 4 吸收者
+defFighter({ key: 'absorber', name: '吸收者', glyph: '收', color: '#00b4d8', speed: 205, hp: 110, desc: '敵人的子彈打到它會被吃掉，近戰受傷也會充能。每 4 秒把存起來的能量一口氣吐成扇形彈幕。',
+  init(b) { b.s.st = 3; },
+  eatProj(b, p, w) { b.s.st = Math.min(24, b.s.st + 1); w.spark(p.x, p.y, '#90e0ef', 4); w.text(b.x, b.y - b.r - 6, '吸收', '#48cae4', 12); return true; },
+  onDamaged(b, a, s, w, o) { if (!o.proj) b.s.st = Math.min(24, b.s.st + Math.ceil(a / 2.5)); },
+  update(b, w, dt) {
+    every(b, 'cd', dt, 4, () => {
+      const e = nearestMain(w, b); if (!e) return;
+      const n = Math.max(3, b.s.st), a0 = angTo(b, e);
+      for (let i = 0; i < n; i++) fireBullet(w, b, a0 + (i - (n - 1) / 2) * 0.11, { speed: 480, dmg: 2, r: 4, color: '#48cae4' });
+      b.s.st = 3; w.ev({ k: 'shoot' });
+    });
+  }, stat: b => '能量 ' + b.s.st });
+
+// 5 附身
+defFighter({ key: 'possess', name: '附身', glyph: '附', color: '#9d8df1', speed: 230, hp: 85, desc: '平常用鐮刀砍人，偶爾變透明。被打倒時附身到最近的敵人身上 10 秒，控制它去打別人；這 10 秒內那顆球要是贏了，算附身贏。（只剩兩顆時無法附身）',
+  init(b) { b.weapons.push(weapon({ kind: 'blade', look: 'scythe', len: 44, width: 5, head: 6, spin: 4.5, dmg: 3.5, cd: 0.35, knock: 150 })); },
+  onHit(b, e, wp) { wp.dmg += 0.3; },
+  update(b, w, dt) { every(b, 'gh', dt, 4, () => { b.ghost = Math.max(b.ghost, 0.8); }); },
+  onDeath(b, w) {
+    const es = foeMains(w, b); if (es.length < 2) return;
+    let h = null, bd = 1e9; for (const e of es) { const d = Math.hypot(e.x - b.x, e.y - b.y); if (d < bd) { bd = d; h = e; } }
+    h.possBy = b; h.possT = 10; b.s.host = h;
+    w.fx.push({ k: 'blink', x1: b.x, y1: b.y, x2: h.x, y2: h.y, c: '#9d8df1', life: 0.6, max: 0.6 });
+    w.text(h.x, h.y - h.r - 20, '被附身！', '#9d8df1', 22); w.ring(h.x, h.y, 70, '#9d8df1', 0.6);
+  },
+  contact: () => 2,
+  stat: (b, w) => (b.dead ? (b.s.host && b.s.host.possT > 0 ? '附身中 ' + Math.ceil(b.s.host.possT) + ' 秒' : '已消散') : '幽魂') });
+
+// 6 倒數炸彈
+defFighter({ key: 'potato', name: '倒數炸彈', glyph: '炸', color: '#ff7b00', speed: 230, hp: 100, desc: '身上有一顆 6 秒的定時炸彈，碰到誰就傳給誰。時間到時拿著的人爆炸受重傷，旁邊的也會被炸到。炸完 3 秒後再來一顆。',
+  init(b, w) {
+    b.s.cdn = 1; b.s.holder = null; b.s.left = 0;
+    w.bumpHooks.push((x, y, W) => {
+      if (b.dead || !b.s.holder) return; const h = b.s.holder; const to = x === h ? y : y === h ? x : null;
+      if (!to || to.minion || to.dead || b.s.pass > W.t) return;
+      h.potT = 0; to.potT = b.s.left; b.s.holder = to; b.s.pass = W.t + 0.4; W.text(to.x, to.y - to.r - 16, '傳給你！', '#ff7b00', 15);
+    });
+  },
+  update(b, w, dt) {
+    let H = b.s.holder;
+    if (!H) { b.s.cdn -= dt; if (b.s.cdn <= 0) { b.s.holder = b; b.s.left = 6; } return; }
+    if (H.dead) { H.potT = 0; H = b.s.holder = b; }
+    b.s.left -= dt; H.potT = Math.max(0.01, b.s.left);
+    if (H === b) { const e = nearestMain(w, b); if (e) steer(b, e.x, e.y, 320, dt); }
+    else steer(b, 2 * b.x - H.x, 2 * b.y - H.y, 220, dt);
+    if (b.s.left <= 0) {
+      H.potT = 0; b.s.holder = null; b.s.cdn = 3;
+      w.ring(H.x, H.y, 100, '#ff7b00', 0.5); w.burst(H.x, H.y, '#ff9800', 24); w.ev({ k: 'boom' }); w.shake = 16;
+      w.text(H.x, H.y - H.r - 18, '轟！', '#ff7b00', 26);
+      w.damage(H, 26, H === b ? null : b, { color: '#ff9b3d' });
+      aoe(w, b, H.x, H.y, 95, 5, { knock: 420, noStop: true, color: '#ffcc80' });
+    }
+  },
+  onDeath(b) { if (b.s.holder) b.s.holder.potT = 0; b.s.holder = null; },
+  contact: () => 1.5,
+  stat: b => (b.s.holder ? (b.s.holder === b ? '炸彈在手 ' : '炸彈在外 ') + Math.ceil(b.s.left) : '裝填中') });
+
+// 7 不死鳥蛋
+defFighter({ key: 'egg', name: '不死鳥蛋', glyph: '蛋', color: '#e9c46a', speed: 70, hp: 70, desc: '一開始是一顆很慢的蛋，受到的傷害少四成。撐過 12 秒就孵化成火鳥：血量回滿、速度很快、揮著火焰翅膀，沿路留下火。',
+  init(b) { b.inMul = 0.6; },
+  update(b, w, dt) {
+    if (!b.s.bird) {
+      if (w.t >= 12) {
+        b.s.bird = 1; b.glyph = '凰'; b.color = '#ff7b00'; b.speed = 240; b.maxHp = 85; b.hp = 85; b.inMul = 1;
+        for (const s of [0, Math.PI]) b.weapons.push(weapon({ kind: 'blade', look: 'sword', len: 40, width: 8, spin: 5, dmg: 2.2, cd: 0.35, knock: 200, a: s, dir: 1 }));
+        w.ring(b.x, b.y, 120, '#ff7b00', 0.7); w.burst(b.x, b.y, '#ffb703', 30); w.text(b.x, b.y - b.r - 18, '孵化！', '#ff7b00', 26); w.ev({ k: 'revive' });
+      }
+      return;
+    }
+    every(b, 'ft', dt, 0.12, () => w.hazard({ kind: 'fire', x: b.x, y: b.y, r: 13, life: 2, team: b.team, owner: b, touch(h, e, W) { if (e.fireCd > 0) return; e.fireCd = 0.45; W.addBurn(e, 1); } }));
+  },
+  onHit(b, e, wp, w) { if (b.s.bird) w.addBurn(e, 2); },
+  stat: (b, w) => (b.s.bird ? '火鳥' : '孵化倒數 ' + Math.max(0, Math.ceil(12 - (w ? w.t : 0)))) });
+
+// 8 對稱雙胞
+defFighter({ key: 'symtwin', name: '對稱雙胞', glyph: '對', color: '#4cc9f0', speed: 220, hp: 95, desc: '分身永遠在擂台的正對面，跟本體對稱移動，兩顆都拿著短刀，中間連著一條會割人的線。敵人被兩顆同時夾住會超痛。分身被打倒 6 秒後回來。',
+  init(b) { b.s.re = 0.01; b.weapons.push(weapon({ kind: 'blade', look: 'dagger', len: 36, width: 5, spin: 5, dmg: 3, cd: 0.35, knock: 150 })); },
+  update(b, w, dt) {
+    if (!b.s.tw || b.s.tw.dead) {
+      b.s.tw = null; b.s.re -= dt;
+      if (b.s.re <= 0) { b.s.re = 6; const m = w.spawn(DEFS.mini, b.team, SIZE - b.x, SIZE - b.y, { r: b.r, hp: 35, speed: 1, minion: true, master: b, color: '#a2d2ff', contactDmg: 1.5 }); m.glyph = '對'; m.pinned = () => {}; b.s.tw = m; m.weapons.push(weapon({ kind: 'blade', look: 'dagger', len: 36, width: 5, spin: 5, dmg: 3, cd: 0.35, knock: 150 })); }
+    }
+  },
+  post(b, w) {
+    const m = b.s.tw; if (!m || m.dead) return;
+    m.x = SIZE - b.x; m.y = SIZE - b.y; m.vx = -b.vx; m.vy = -b.vy;
+    const seg = { x: b.x, y: b.y, x2: m.x, y2: m.y };
+    for (const e of w.balls) {
+      if (e.dead || e.team === b.team) continue;
+      const q = segNear(e.x, e.y, seg);
+      if (q.d < e.r + 2 && q.t > 0.03 && q.t < 0.97 && !(e.strCd > w.t)) { e.strCd = w.t + 0.4; w.damage(e, 2.5, b, { noStop: true, color: '#90e0ef' }); }
+      const dA = Math.hypot(e.x - b.x, e.y - b.y) - e.r - b.r, dB = Math.hypot(e.x - m.x, e.y - m.y) - e.r - m.r;
+      if (dA < 6 && dB < 6 && !(e.pinchCd > w.t) && !e.minion) { e.pinchCd = w.t + 1; w.text(e.x, e.y - e.r - 20, '夾擊！', '#4cc9f0', 22); w.damage(e, 18, b, { color: '#4cc9f0' }); }
+    }
+  },
+  tether(b) { const m = b.s.tw; return m && !m.dead ? [r0(m.x), r0(m.y)] : null; },
+  stat: b => (b.s.tw && !b.s.tw.dead ? '分身在場' : '分身復活中') });
+
+// 9 廚師
+const DISHES = [
+  { n: '辣炒', c: '#ff4d4d', d: 2.5, f: (e, w) => w.addBurn(e, 3) },
+  { n: '冰沙', c: '#a0e7ff', d: 2.5, f: (e, w) => w.addChill(e, 0.35) },
+  { n: '大餐', c: '#ffb703', d: 5 },
+  { n: '黑暗料理', c: '#6a994e', d: 2, f: (e, w) => w.addPoison(e, 4) },
+  { n: '甜點', c: '#ffafcc', d: 1, f: (e, w) => { w.heal(e, 5, true); w.text(e.x, e.y - e.r - 18, '好吃！', '#ff70a6', 14); } },
+];
+defFighter({ key: 'chef', name: '廚師', glyph: '廚', color: '#d4a373', speed: 215, hp: 105, desc: '每 1.3 秒丟一道料理：辣炒會燒、冰沙會凍、大餐很痛、黑暗料理有毒，甜點反而會幫敵人回血。每命中 6 道，出菜更快。',
+  init(b) { b.s.n = 0; },
+  update(b, w, dt) {
+    every(b, 'cd', dt, Math.max(0.7, 1.3 - Math.floor(b.s.n / 6) * 0.1), () => {
+      const e = nearestMain(w, b); if (!e) return;
+      const r = Math.random(), D = DISHES[r < 0.24 ? 0 : r < 0.46 ? 1 : r < 0.68 ? 2 : r < 0.88 ? 3 : 4];
+      fireBullet(w, b, angTo(b, e), { kind: 'dish', speed: 400, dmg: D.d, r: 7, life: 2.5, color: D.c, tc: D.c, onHit: D.f ? (p, t, W) => D.f(t, W) : null });
+    });
+  },
+  onProjHit(b) { b.s.n++; },
+  stat: b => '上菜 ' + b.s.n });
+
+// 10 偵探
+defFighter({ key: 'detective', name: '偵探', glyph: '偵', color: '#6c584c', speed: 215, hp: 110, desc: '盯住一個目標，盯越久打它越痛（每秒 +8%，最多 +150%）。每 1.2 秒朝目標開一槍。目標倒下就換人、重新計算。',
+  init(b) { b.s.fx = 0; },
+  update(b, w, dt) {
+    let t = b.s.tg;
+    if (!t || t.dead) { t = b.s.tg = nearestMain(w, b); b.s.fx = 0; if (t) w.text(t.x, t.y - t.r - 16, '鎖定', '#6c584c', 14); }
+    if (!t) { b.focus = null; b.linkTo = null; return; }
+    b.s.fx = Math.min(1.5, b.s.fx + 0.08 * dt); b.focus = t; b.focusMul = 1 + b.s.fx; mark(w, t, '#6c584c'); b.linkTo = t; b.linkC = 'rgba(108,88,76,0.3)';
+    every(b, 'cd', dt, 1.2, () => fireBullet(w, b, angTo(b, t), { speed: 640, dmg: 3, r: 4, color: '#3a2e25' }));
+  },
+  stat: b => '專注 +' + Math.round(b.s.fx * 100) + '%' });
+
+// 11 郵差
+function openPkg(w, P, v, h) {
+  const own = v.team === P.team;
+  const pool = own ? ['heal', 'speed', 'shield'] : ['bomb', 'bomb', 'freeze', 'poison', 'heal', 'speed'];
+  const r = pool[(Math.random() * pool.length) | 0];
+  w.burst(h.x, h.y, '#c8a165', 8);
+  if (r === 'heal') { w.heal(v, 10, true); w.text(v.x, v.y - v.r - 18, '包裹：補血', '#7dffa8', 14); }
+  else if (r === 'speed') { v.spdMul = Math.min(2, v.spdMul * 1.25); w.text(v.x, v.y - v.r - 18, '包裹：加速', '#7dffa8', 14); }
+  else if (r === 'shield') { v.barrier = Math.min(60, v.barrier + 12); w.text(v.x, v.y - v.r - 18, '包裹：護盾', '#8fe9ff', 14); }
+  else if (r === 'bomb') { explodeAt(w, P, h.x, h.y, 55, 6); w.text(v.x, v.y - v.r - 18, '包裹：炸彈', '#ff7b00', 15); }
+  else if (r === 'freeze') { v.frozen = Math.max(v.frozen, 1.2); w.text(v.x, v.y - v.r - 18, '包裹：冰凍', '#bfe8ff', 15); }
+  else if (r === 'poison') { w.addPoison(v, 5); w.text(v.x, v.y - v.r - 18, '包裹：毒', '#9be35a', 15); }
+  P.s.n = (P.s.n || 0) + 1;
+}
+defFighter({ key: 'postman', name: '郵差', glyph: '郵', color: '#2a9d8f', speed: 235, hp: 100, desc: '每 2.4 秒往敵人附近丟一個包裹，誰撞到誰拆開：可能是炸彈、冰凍、中毒，也可能是補血或加速。郵差自己拆一定是好東西。',
+  update(b, w, dt) {
+    every(b, 'cd', dt, 2.4, () => {
+      const e = nearestMain(w, b); if (!e) return;
+      const pk = myHaz(w, b, 'pkg'); if (pk.length >= 6) pk[0].dead = true;
+      const m = w.margin + 14, x = clamp(e.x + rand(-70, 70), m, SIZE - m), y = clamp(e.y + rand(-70, 70), m, SIZE - m);
+      w.hazard({ kind: 'pkg', x, y, r: 10, life: 10, team: -99, owner: b, touch(h, v, W) { if (h.dead || v.minion || W.t - h.born < 0.3) return; h.dead = true; openPkg(W, h.owner, v, h); }, born: w.t });
+    });
+  },
+  contact: () => 2, stat: b => '拆了 ' + (b.s.n || 0) + ' 個' });
+
+// 12 吸塵器
+function suck(b, w, k) { b.s.n += k; if (b.r < 46) { b.r = Math.min(46, b.r + 0.3 * k); b.mass = b.r * b.r / 784 * b.mod.mass; } b.maxHp += k; w.heal(b, k); }
+defFighter({ key: 'vacuum', name: '吸塵器', glyph: '塵', color: '#8d99ae', speed: 200, hp: 105, desc: '把附近的子彈、地雷、陷阱和場上的東西全吸掉，敵人也會被慢慢吸過來。吸越多越大顆、血越多、撞人越痛。',
+  init(b) { b.s.n = 0; },
+  update(b, w, dt) {
+    const R = 150;
+    for (const p of w.proj) { if (p.dead || p.team === b.team) continue; const d = Math.hypot(p.x - b.x, p.y - b.y); if (d > R) continue; steer(p, b.x, b.y, 1500, dt); if (d < b.r + 8) { p.dead = true; suck(b, w, 1); } }
+    for (const h of w.haz) { if (h.dead || h.team === b.team || h.noSuck || h.seg) continue; if (Math.hypot(h.x - b.x, h.y - b.y) < b.r + 26) { h.dead = true; suck(b, w, 2); w.spark(h.x, h.y, '#8d99ae', 5); } }
+    for (const e of w.balls) { if (e.dead || e.team === b.team) continue; const d = Math.hypot(e.x - b.x, e.y - b.y); if (d < R + e.r) steer(e, b.x, b.y, 150, dt); }
+  },
+  contact: b => 1.5 + (b.r - 28) * 0.2, aura: () => [150, '#8d99ae'], stat: b => '吸了 ' + b.s.n });
+
+// 13 國王
+defFighter({ key: 'king', name: '國王', glyph: '皇', color: '#ffc300', speed: 205, hp: 110, desc: '每 10 秒招募最近的一顆敵人當護衛 10 秒：護衛和國王互不傷害，護衛還會去撞國王身邊的敵人。剩兩顆時改成每 5 秒叫小衛兵出來。長槍每次命中更痛。',
+  init(b) { b.weapons.push(weapon({ kind: 'blade', look: 'spear', len: 50, width: 5, head: 6, spin: 4, dmg: 3.5, cd: 0.35, knock: 180 })); },
+  onHit(b, e, wp) { wp.dmg += 0.3; },
+  update(b, w, dt) {
+    const G = b.s.g;
+    if (G && (G.dead || w.t > b.s.gEnd || foeMains(w, b).length < 1)) { w.unpact(b, G); b.s.g = null; b.linkTo = null; }
+    if (b.s.g) { const g = b.s.g, e = nearestMain(w, b, x => x !== g); if (e) steer(g, e.x, e.y, 520, dt); mark(w, g, '#ffc300'); }
+    every(b, 'cd', dt, foeMains(w, b).length >= 2 ? 10 : 5, () => {
+      if (b.s.g) return;
+      const es = foeMains(w, b);
+      if (es.length >= 2) {
+        let g = null, bd = 1e9; for (const e of es) { const d = Math.hypot(e.x - b.x, e.y - b.y); if (d < bd) { bd = d; g = e; } }
+        w.pact(b, g); b.s.g = g; b.s.gEnd = w.t + 10; b.linkTo = g; b.linkC = '#ffc300';
+        w.text(g.x, g.y - g.r - 18, '成為護衛', '#ffc300', 16); w.ring(g.x, g.y, 60, '#ffc300', 0.5);
+      } else if (minionCount(w, b) < 2) {
+        const m = w.spawn(DEFS.mini, b.team, b.x, b.y, { r: 13, hp: 16, speed: 240, minion: true, master: b, color: '#ffd60a', homing: 320 });
+        m.weapons.push(weapon({ kind: 'blade', look: 'spear', len: 30, width: 4, spin: 5, dmg: 2, cd: 0.4, knock: 140 })); w.ev({ k: 'summon' });
+      }
+    });
+  },
+  stat: b => (b.s.g ? '護衛：' + b.s.g.name : '尋找護衛') });
+
+// 14 僕人
+defFighter({ key: 'servant', name: '僕人', glyph: '僕', color: '#6d6875', speed: 240, hp: 105, desc: '找場上血最多的球當主人，跟在旁邊幫它打最近的敵人，服侍時傷害 +40%、受傷 -30%；主人和僕人互不傷害。匕首每次命中更痛。主人倒下就換人，剩兩顆時契約解除。',
+  init(b) { b.weapons.push(weapon({ kind: 'blade', look: 'dagger', len: 40, width: 5, spin: 6, dmg: 3, cd: 0.3, knock: 150 })); },
+  onHit(b, e, wp) { wp.dmg += 0.5; },
+  update(b, w, dt) {
+    let M = b.s.m;
+    const others = w.mains.filter(x => !x.dead && x.team !== b.team);
+    if (M && (M.dead || others.length < 2)) { w.unpact(b, M); M = b.s.m = null; b.linkTo = null; b.outBoost = 1; b.inMul = 1; if (others.length < 2) w.text(b.x, b.y - b.r - 16, '契約解除', '#9aa3b5', 14); }
+    if (!M && others.length >= 2) {
+      M = others.slice().sort((x, y) => y.hp - x.hp)[0]; w.pact(b, M); b.s.m = M; b.linkTo = M; b.linkC = 'rgba(109,104,117,0.5)'; b.outBoost = 1.4; b.inMul = 0.7;
+      w.text(M.x, M.y - M.r - 18, '主人！', '#6d6875', 15);
+    }
+    if (M) {
+      mark(w, M, '#6d6875');
+      const e = nearestMain(w, M, x => x !== b);
+      if (e && Math.hypot(e.x - M.x, e.y - M.y) < 220) steer(b, e.x, e.y, 520, dt);
+      else if (Math.hypot(M.x - b.x, M.y - b.y) > M.r + b.r + 50) steer(b, M.x, M.y, 420, dt);
+    }
+  },
+  stat: b => (b.s.m ? '主人：' + b.s.m.name : '自由') });
+
+// 15 回溯者
+defFighter({ key: 'rewinder', name: '回溯者', glyph: '溯', color: '#80deea', speed: 220, hp: 95, desc: '每 7 秒倒帶，回到 6 秒前的位置和血量（場上的虛線圈是會回去的地方）。被打殘時倒帶就賺到（一次最多回 20），剛回完血倒帶就虧了。',
+  init(b) { b.s.h = []; b.weapons.push(weapon({ kind: 'blade', look: 'sword', len: 52, width: 6, spin: 4.5, dmg: 3, cd: 0.35, knock: 170 })); },
+  update(b, w, dt) {
+    const H = b.s.h; H.push([w.t, b.x, b.y, b.hp]); while (H.length > 2 && H[1][0] <= w.t - 6) H.shift();
+    const g = H[0]; b.s.gp = w.t >= 1 ? [g[1], g[2]] : null;
+    every(b, 'cd', dt, 7, () => {
+      if (w.t < 6) return;
+      w.fx.push({ k: 'blink', x1: b.x, y1: b.y, x2: g[1], y2: g[2], c: '#80deea', life: 0.5, max: 0.5 });
+      const d = Math.min(20, g[3] - b.hp); b.x = g[1]; b.y = g[2]; b.hp = clamp(b.hp + d, 1, b.maxHp); b.burn = 0;
+      w.text(b.x, b.y - b.r - 16, '倒帶 ' + (d >= 0 ? '+' : '') + fmt(d), d >= 0 ? '#7dffa8' : '#ff5d73', 18); w.ring(b.x, b.y, 70, '#80deea', 0.5); w.ev({ k: 'blink' });
+      b.s.h = [];
+    });
+  }, stat: b => '倒帶' });
+
+// 16 慢動作
+defFighter({ key: 'slowmo', name: '慢動作', glyph: '慢', color: '#b8c0ff', speed: 200, hp: 105, desc: '身邊 120 範圍內時間變慢：子彈飛進來會停在半空，等它離開才繼續飛；敵人進來也會變慢。自己每 0.6 秒丟一把飛刀，飛刀也會先停在身邊。',
+  update(b, w, dt) {
+    const R = 120;
+    for (const p of w.proj) if (!p.dead && Math.hypot(p.x - b.x, p.y - b.y) < R) p.frz = 1;
+    for (const e of w.balls) if (!e.dead && e.team !== b.team && Math.hypot(e.x - b.x, e.y - b.y) < R + e.r) w.addChill(e, 0.9 * dt, true);
+    every(b, 'cd', dt, 0.6, () => { const e = nearestMain(w, b); if (e) fireBullet(w, b, angTo(b, e), { kind: 'spike', speed: 540, dmg: 2.5, r: 4, life: 8, color: '#e0e1ff' }); });
+  }, aura: () => [120, '#b8c0ff'], stat: () => '慢速場' });
+
+// 17 黏黏球
+defFighter({ key: 'sticky', name: '黏黏球', glyph: '黏', color: '#80b918', speed: 210, hp: 115, desc: '碰到的敵人會黏在身上 2 秒一起滾，黏著時一直掉血。每黏到一次就變大一點、血量上限 +3。',
+  init(b, w) {
+    b.s.st = []; b.s.n = 0;
+    w.bumpHooks.push((x, y, W) => {
+      if (b.dead) return; const o = x === b ? y : y === b ? x : null;
+      if (!o || o.dead || o.pinned || o.bind || o.stickCd > W.t || b.s.st.length >= 3) return;
+      const d = Math.hypot(o.x - b.x, o.y - b.y) || 1, rr = b.r + o.r;
+      b.s.st.push({ e: o, dx: (o.x - b.x) / d * rr, dy: (o.y - b.y) / d * rr, t: 2 }); o.pinned = () => {}; o.stickCd = W.t + 3;
+      b.s.n++; if (b.r < 44) { b.r += 0.8; b.mass = b.r * b.r / 784 * b.mod.mass; } b.maxHp += 3; b.hp += 3;
+      W.text(o.x, o.y - o.r - 16, '黏住！', '#80b918', 15);
+    });
+  },
+  post(b, w, dt) {
+    b.s.st = b.s.st.filter(s => {
+      const e = s.e; s.t -= dt;
+      if (e.dead || s.t <= 0 || b.dead) { e.pinned = null; if (!e.dead) { const d = Math.hypot(s.dx, s.dy) || 1; e.vx = s.dx / d * 420; e.vy = s.dy / d * 420; } return false; }
+      const rr = b.r + e.r, d = Math.hypot(s.dx, s.dy) || 1, L = w.margin + e.r, R = SIZE - w.margin - e.r; e.x = clamp(b.x + s.dx / d * rr, L, R); e.y = clamp(b.y + s.dy / d * rr, L, R); e.vx = b.vx; e.vy = b.vy;
+      w.dot(e, 4.5 * dt, '#b5e48c'); return true;
+    });
+  },
+  onDeath(b) { for (const s of b.s.st) s.e.pinned = null; b.s.st = []; },
+  contact: () => 2, stat: b => '黏過 ' + b.s.n + ' 次' });
+
+// 18 彈簧
+defFighter({ key: 'springer', name: '彈簧', glyph: '簧', color: '#90be6d', speed: 240, hp: 110, desc: '撞牆時在牆上裝一個彈簧（最多 6 個）。敵人碰到彈簧會被彈飛受傷；自己碰到會朝最近的敵人高速彈射，越快撞人越痛。',
+  onWall(b, w) {
+    if (b.s.wc > w.t) return; b.s.wc = w.t + 0.5;
+    const q = wallPoint(w, b), sp = myHaz(w, b, 'spring'); if (sp.length >= 6) sp[0].dead = true;
+    w.hazard({ kind: 'spring', x: q.x + q.nx * 9, y: q.y + q.ny * 9, r: 12, life: 12, team: -99, owner: b, nx: q.nx, ny: q.ny, cd: new Map(),
+      touch(h, e, W) {
+        if ((h.cd.get(e.id) || 0) > W.t) return; h.cd.set(e.id, W.t + 0.8); h.pop = W.t;
+        if (e === h.owner) { const t = nearestMain(W, e), a = t ? angTo(e, t) : Math.atan2(h.ny, h.nx); e.vx = Math.cos(a) * 720; e.vy = Math.sin(a) * 720; W.ev({ k: 'blink' }); }
+        else if (e.team !== h.owner.team) { e.vx = h.nx * 760 + rand(-120, 120); e.vy = h.ny * 760 + rand(-120, 120); W.damage(e, 4, h.owner, { noStop: true, color: '#b5e48c' }); }
+      },
+      snap: h => [h.nx, h.ny] });
+  },
+  contact: b => Math.max(1.5, Math.hypot(b.vx, b.vy) / 80), stat: (b, w) => '彈簧 ' + (w ? myHaz(w, b, 'spring').length : 0) });
+
+// 19 磨刀石
+function grindPin(b, w, dt) {
+  const L = w.margin + b.r, R = SIZE - w.margin - b.r, tx = -b.s.ny * b.s.dir, ty = b.s.nx * b.s.dir;
+  b.vx = tx * 150; b.vy = ty * 150; b.x += b.vx * dt; b.y += b.vy * dt;
+  if (b.s.nx === 1) b.x = L; if (b.s.nx === -1) b.x = R; if (b.s.ny === 1) b.y = L; if (b.s.ny === -1) b.y = R;
+  if (b.x < L || b.x > R || b.y < L || b.y > R) { b.s.dir *= -1; b.x = clamp(b.x, L, R); b.y = clamp(b.y, L, R); }
+}
+function stopGrind(b, w) { b.s.on = 0; b.pinned = null; b.s.off = w.t + 1.2; b.vx = b.s.nx * 260 + rand(-80, 80); b.vy = b.s.ny * 260 + rand(-80, 80); }
+defFighter({ key: 'grinder', name: '磨刀石', glyph: '磨', color: '#6c757d', speed: 220, hp: 100, desc: '撞到牆就貼著牆磨刀，磨越久刀越長越痛；被打到就會離開牆。磨刀進度到 20 就滿了，滿了就不再磨。',
+  init(b) { b.s.g = 0; b.weapons.push(weapon({ kind: 'blade', look: 'sword', len: 26, width: 6, spin: 4, dmg: 1.5, cd: 0.35, knock: 170 })); },
+  onWall(b, w) { if (b.s.g >= 20 || b.s.on || b.s.off > w.t || b.dead) return; const q = wallPoint(w, b); b.s.on = 1; b.s.nx = q.nx; b.s.ny = q.ny; b.s.dir = Math.random() < 0.5 ? 1 : -1; b.pinned = grindPin; },
+  onDamaged(b, a, s, w) { if (b.s.on) stopGrind(b, w); },
+  update(b, w, dt) {
+    const wp = b.weapons[0];
+    if (b.s.on) { b.s.g = Math.min(20, b.s.g + 1.5 * dt); if (b.s.g >= 20) { stopGrind(b, w); w.text(b.x, b.y - b.r - 16, '磨好了！', '#ffd166', 16); } if (Math.random() < dt * 25) w.spark(b.x - b.s.nx * b.r, b.y - b.s.ny * b.r, '#ffd166', 2); }
+    wp.len = 30 + b.s.g * 3.5; wp.dmg = 2.5 + b.s.g * 0.2;
+  }, stat: b => '磨刀 ' + Math.floor(b.s.g) + '/20' });
+
+// 20 油漆工
+defFighter({ key: 'roller', name: '油漆工', glyph: '漆', color: '#f4a261', speed: 230, hp: 100, desc: '滾過的格子都會塗上油漆（留 18 秒）。回到自己塗過的地方會回血，敵人踩到會滑得很快、而且一直掉血。',
+  init(b) { b.weapons.push(weapon({ kind: 'blade', look: 'hammer', len: 30, width: 6, head: 8, spin: 4, dmg: 2, cd: 0.35, knock: 180 })); },
+  update(b, w) {
+    const cx = Math.floor(b.x / 24), cy = Math.floor(b.y / 24), k = cx + ',' + cy, C = b.s.cells || (b.s.cells = new Map());
+    const old = C.get(k); if (old && !old.dead) return;
+    if (C.size >= 80) { for (const [kk, h] of C) { if (h.dead) { C.delete(kk); continue; } if (C.size >= 80) { h.dead = true; C.delete(kk); } else break; } }
+    C.set(k, w.hazard({ kind: 'paint', key: k, x: cx * 24 + 12, y: cy * 24 + 12, r: 12, life: 18, team: -99, owner: b, color: b.color, born: w.t,
+      touch(h, e, W) { const o = h.owner; if (e.team === o.team) { if (!e.minion && W.t - h.born > 2) W.heal(e, 1.2 * W.dt); } else { e.slipT = 0.15; W.dot(e, 0.7 * W.dt, '#f4a261'); } },
+      snap: h => [h.color] }));
+  }, stat: b => '塗了 ' + (b.s.cells ? b.s.cells.size : 0) + ' 格' });
+
+// 21 軌道工
+defFighter({ key: 'railman', name: '軌道工', glyph: '軌', color: '#bc6c25', speed: 230, hp: 100, desc: '撞到牆就開始拉軌道，撞到下一面牆時軌道完工，火車沿著軌道來回開，撞到敵人很痛。軌道留 12 秒，最多兩條。',
+  init(b) { b.weapons.push(weapon({ kind: 'blade', look: 'hammer', len: 26, width: 5, head: 7, spin: 4.5, dmg: 1.5, cd: 0.35, knock: 160 })); },
+  onWall(b, w) {
+    if (b.s.wc > w.t) return; b.s.wc = w.t + 0.3;
+    if (!b.s.st) { b.s.st = [b.x, b.y]; return; }
+    const [x1, y1] = b.s.st; b.s.st = null;
+    if (Math.hypot(b.x - x1, b.y - y1) < 110) { b.s.st = [b.x, b.y]; return; }
+    const rails = myHaz(w, b, 'rail'); if (rails.length >= 2) rails[0].dead = true;
+    const rail = w.hazard({ kind: 'rail', x: x1, y: y1, x2: b.x, y2: b.y, r: 4, life: 12, team: b.team, owner: b, noSuck: 1, snap: h => [r0(h.x2), r0(h.y2)] });
+    w.hazard({ kind: 'train', x: x1, y: y1, r: 14, life: 12, team: b.team, owner: b, rail, tt: 0, dir: 1, hc: new Map(), noSuck: 1,
+      update(h, W, dt) {
+        const R = h.rail; if (R.dead) { h.dead = true; return; }
+        const L = Math.hypot(R.x2 - R.x, R.y2 - R.y) || 1; h.tt += h.dir * 300 * dt / L;
+        if (h.tt > 1) { h.tt = 1; h.dir = -1; } if (h.tt < 0) { h.tt = 0; h.dir = 1; }
+        h.x = R.x + (R.x2 - R.x) * h.tt; h.y = R.y + (R.y2 - R.y) * h.tt; h.ang = Math.atan2(R.y2 - R.y, R.x2 - R.x);
+      },
+      touch(h, e, W) { if (!zoneHit(h, e, W, 0.8)) return; const a = (h.ang || 0) + (h.dir > 0 ? 0 : Math.PI); W.damage(e, 9, h.owner, { knock: 520, kx: Math.cos(a), ky: Math.sin(a), color: '#dda15e' }); W.ev({ k: 'boom' }); },
+      snap: h => [r2(h.ang || 0)] });
+    w.text(b.x, b.y - b.r - 16, '通車！', '#bc6c25', 16); w.ev({ k: 'summon' });
+  },
+  tether(b) { return b.s.st ? [r0(b.s.st[0]), r0(b.s.st[1])] : null; },
+  stat: (b, w) => (b.s.st ? '鋪軌中' : '軌道 ' + (w ? myHaz(w, b, 'rail').length : 0)) });
+
+// 22 契約者
+const CT_SKIP = ['contract', 'mimic'];
+function ctDef(b) { return b.s.mk && DEFS[b.s.mk]; }
+defFighter({ key: 'contract', name: '契約者', glyph: '契', color: '#9d0208', speed: 220, hp: 100, desc: '開場和一顆敵人簽約，打它傷害 +30%。那顆球被打倒時，契約者就得到它的能力，再找下一個簽約對象。還沒得到能力前，劍每次命中更痛。',
+  init(b) { b.weapons.push(weapon({ kind: 'blade', look: 'sword', len: 50, width: 5, spin: 5, dmg: 3, cd: 0.3, knock: 150 })); },
+  update(b, w, dt) {
+    if (b.s.base === undefined) b.s.base = b.weapons.length;
+    const t = b.s.ct;
+    if (t && t.dead) {
+      const k = (t.s.mk && DEFS[t.s.mk]) ? t.s.mk : t.def.key;
+      if (!CT_SKIP.includes(k)) { b.weapons.length = b.s.base; b.s.mk = k; const d = DEFS[k]; d.init && d.init(b, w); w.text(b.x, b.y - b.r - 18, '得到「' + d.name + '」', '#9d0208', 17); w.ring(b.x, b.y, 80, '#9d0208', 0.6); }
+      b.s.ct = null; b.focus = null; b.linkTo = null;
+    }
+    if (!b.s.ct) { const es = foeMains(w, b); if (es.length) { const c = b.s.ct = es[(Math.random() * es.length) | 0]; b.focus = c; b.focusMul = 1.3; w.text(c.x, c.y - c.r - 16, '簽約', '#9d0208', 14); } }
+    if (b.s.ct) { mark(w, b.s.ct, '#9d0208'); b.linkTo = b.s.ct; b.linkC = 'rgba(157,2,8,0.3)'; }
+    const d = ctDef(b); d && d.update && d.update(b, w, dt);
+  },
+  onHit(b, e, wp, w) { if (wp === b.weapons[0] && !b.s.mk) wp.dmg += 0.4; const d = ctDef(b); d && d.onHit && d.onHit(b, e, wp, w); },
+  onProjHit(b, e, p, w) { const d = ctDef(b); d && d.onProjHit && d.onProjHit(b, e, p, w); },
+  onWall(b, w) { const d = ctDef(b); d && d.onWall && d.onWall(b, w); },
+  onDamaged(b, a, s, w, o) { const d = ctDef(b); d && d.onDamaged && d.onDamaged(b, a, s, w, o); },
+  onParry(b, wp, w) { const d = ctDef(b); d && d.onParry && d.onParry(b, wp, w); },
+  onBlock(b, wp, p, w) { const d = ctDef(b); d && d.onBlock && d.onBlock(b, wp, p, w); },
+  contact(b, e, w) { const d = ctDef(b); return d && d.contact ? d.contact(b, e, w) : 0; },
+  onContact(b, e, w) { const d = ctDef(b); d && d.onContact && d.onContact(b, e, w); },
+  eatProj(b, p, w) { const d = ctDef(b); return d && d.eatProj ? d.eatProj(b, p, w) : false; },
+  post(b, w, dt) { const d = ctDef(b); d && d.post && d.post(b, w, dt); },
+  onDeath(b, w, s) { const d = ctDef(b); d && d.onDeath && d.onDeath(b, w, s); },
+  speedOf(b) { const d = ctDef(b); return d && d.speedOf ? d.speedOf(b) : b.speed; },
+  aura(b) { const d = ctDef(b); return d && d.aura ? d.aura(b) : null; },
+  tether(b) { const d = ctDef(b); return d && d.tether ? d.tether(b) : null; },
+  stat: (b, w) => (b.s.mk ? '能力：' + DEFS[b.s.mk].name : '契約：' + (b.s.ct ? b.s.ct.name : '—')) });
+
+// 23 結界師
+defFighter({ key: 'warder', name: '結界師', glyph: '界', color: '#4361ee', speed: 215, hp: 100, desc: '每 5 秒把最近的敵人關進一個方形結界 3 秒，結界會慢慢縮小。平常丟符咒，打結界裡的敵人傷害 +50%。',
+  update(b, w, dt) {
+    every(b, 'bx', dt, 5, () => {
+      const e = nearestMain(w, b, x => !x.boxed); if (!e) return;
+      const half = e.r + 34, m = w.margin + half, x = clamp(e.x, m, SIZE - m), y = clamp(e.y, m, SIZE - m);
+      const h = w.hazard({ kind: 'box', x, y, r: half, life: 3, team: b.team, owner: b, tgt: e, noSuck: 1,
+        update(h, W, dt) { if (h.tgt.dead) { h.dead = true; return; } h.r = Math.max(h.tgt.r + 5, h.r - 7 * dt); },
+        end(h) { if (h.tgt.boxed === h) h.tgt.boxed = null; } });
+      e.boxed = h; e.x = clamp(e.x, x - half + e.r, x + half - e.r); e.y = clamp(e.y, y - half + e.r, y + half - e.r);
+      w.text(e.x, e.y - e.r - 16, '結界！', '#4361ee', 16); w.ev({ k: 'freeze' });
+    });
+    every(b, 'cd', dt, 0.9, () => { const e = nearestMain(w, b); if (e) fireBullet(w, b, angTo(b, e), { speed: 520, dmg: e.boxed ? 3 : 2, r: 5, color: '#fefae0', tc: '#4361ee' }); });
+  }, stat: () => '符咒' });
+
+// 24 時停
+defFighter({ key: 'timestop', name: '時停', glyph: '停', color: '#ffd60a', speed: 225, hp: 95, desc: '每 9 秒讓時間停止 2 秒，只有自己能動。匕首每次命中更痛。停止時丟出的飛刀會停在空中，時間恢復時一起飛出去。',
+  init(b) { b.weapons.push(weapon({ kind: 'blade', look: 'dagger', len: 38, width: 5, spin: 6, dmg: 2.5, cd: 0.3, knock: 150 })); b.s.kt = 0; },
+  onHit(b, e, wp) { wp.dmg += 0.3; },
+  update(b, w, dt) {
+    every(b, 'cd', dt, 9, () => {
+      if (w.tsT > 0) return;
+      w.tsT = 2; w.tsTeam = b.team; b.s.kt = 0;
+      w.ring(b.x, b.y, 400, '#ffd60a', 0.7); w.text(b.x, b.y - b.r - 18, '時間停止！', '#ffb703', 22); w.ev({ k: 'freeze' });
+    });
+    if (w.tsT > 0 && w.tsTeam === b.team) {
+      b.s.kt -= dt;
+      if (b.s.kt <= 0) { b.s.kt = 0.13; const e = nearestMain(w, b); if (e) { const p = fireBullet(w, b, angTo(b, e) + rand(-0.25, 0.25), { kind: 'spike', speed: 560, dmg: 2.2, r: 4, life: 4, color: '#ffe066' }); p.tsHold = 1; } }
+    }
+  }, stat: (b, w) => (w && w.tsT > 0 && w.tsTeam === b.team ? '時間停止中' : '懷錶') });
+
+// 25 影子操控
+defFighter({ key: 'shadowbind', name: '影子操控', glyph: '縛', color: '#3c096c', speed: 235, hp: 100, desc: '碰到敵人就用影子把它和自己綁住，兩顆都不能動，期間慢慢吸它的血，直到其中一顆被打到才解開。平常會射影刺，剩兩顆時影子失效、影刺射更快。',
+  init(b, w) {
+    w.bumpHooks.push((x, y, W) => {
+      if (b.dead) return; const o = x === b ? y : y === b ? x : null;
+      if (!o || o.minion || o.dead || b.bind || o.bind || b.s.bc > W.t || foeMains(W, b).length < 2) return;
+      b.bind = o; o.bind = b; b.s.bc = W.t + 4; W.dot(o, 5, '#9d4edd', true); W.heal(b, 5, true); W.text(o.x, o.y - o.r - 18, '影縛！', '#7b2cbf', 18); W.ev({ k: 'freeze' });
+    });
+  },
+  update(b, w, dt) {
+    const o = b.bind, n = foeMains(w, b).length;
+    if (o && !o.dead) { b.linkTo = o; b.linkC = '#7b2cbf'; w.dot(o, 2 * dt, '#9d4edd'); w.heal(b, 1 * dt); if (n < 2) { b.bind = null; o.bind = null; } }
+    else b.linkTo = null;
+    every(b, 'cd', dt, n < 2 ? 0.9 : 1.6, () => { const e = nearestMain(w, b); if (e) fireBullet(w, b, angTo(b, e), { kind: 'spike', speed: 560, dmg: 2.5, r: 4, color: '#7b2cbf' }); });
+  },
+  contact: () => 2, stat: b => (b.bind ? '影縛中' : '影子') });
+
+// 26 浮游砲
+defFighter({ key: 'funnel', name: '浮游砲', glyph: '浮', color: '#06d6a0', speed: 235, hp: 95, desc: '撞到牆就在牆上留一座浮游砲（最多 6 座）。本體撞到敵人時，所有浮游砲一起朝那顆敵人開火，但路上擋到別人就會先打到別人。',
+  init(b, w) {
+    w.bumpHooks.push((x, y, W) => {
+      if (b.dead) return; const o = x === b ? y : y === b ? x : null;
+      if (!o || o.dead || b.s.fc > W.t) return; b.s.fc = W.t + 0.6;
+      for (const h of myHaz(W, b, 'turret')) { const a = Math.atan2(o.y - h.y, o.x - h.x); h.aim = a; fireBullet(W, { x: h.x, y: h.y, r: 10, team: b.team, color: '#06d6a0' }, a, { owner: b, speed: 640, dmg: 3, r: 4, color: '#06d6a0' }); }
+      W.ev({ k: 'shoot' });
+    });
+  },
+  onWall(b, w) {
+    if (b.s.wc > w.t) return; b.s.wc = w.t + 0.4;
+    const q = wallPoint(w, b), ts = myHaz(w, b, 'turret'); if (ts.length >= 6) ts[0].dead = true;
+    w.hazard({ kind: 'turret', x: q.x + q.nx * 12, y: q.y + q.ny * 12, r: 9, life: 14, team: b.team, owner: b, aim: Math.atan2(q.ny, q.nx), color: '#06d6a0' });
+  },
+  contact: () => 1.5, stat: (b, w) => '浮游砲 ' + (w ? myHaz(w, b, 'turret').length : 0) });
 
 // ---------- CARDS (100) ----------
 // kind: buff 增益 / debuff 削弱 / wild 特殊 / flip 正負顛倒;  r: rarity 1 普通 2 稀有 3 傳說
@@ -2007,7 +2544,7 @@ function resolveCards(plays, n) {
 }
 function modFromEntries(list) { const keys = []; for (const e of list) if (!e.dead && CARDS[e.key].apply) for (let k = 0; k < Math.min(4, e.mult); k++) keys.push(e.key); return buildMod(keys); }
 function buildMod(cardKeys) {
-  const m = baseMod(); for (const k of cardKeys) { const c = CARDS[k]; if (c && c.apply) c.apply(m); }
+  const m = baseMod(); m.keys = cardKeys.slice(); for (const k of cardKeys) { const c = CARDS[k]; if (c && c.apply) c.apply(m); }
   m.spd = clamp(m.spd, 0.3, 2.5); m.size = clamp(m.size, 0.5, 2); m.dmgIn = clamp(m.dmgIn, 0.2, 4); m.dmgOut = clamp(m.dmgOut, 0.15, 5);
   m.hpMul = clamp(m.hpMul, 0.2, 4); m.rate = clamp(m.rate, 0.3, 3); m.dodge = Math.min(0.6, m.dodge); m.crit = Math.min(0.8, m.crit);
   m.reflectProj = Math.min(0.8, m.reflectProj); m.frozen = Math.min(8, m.frozen); m.knockOut = clamp(m.knockOut, -3, 4);
@@ -2017,7 +2554,7 @@ function buildMod(cardKeys) {
 // ---------- SNAPSHOT (compact, what the renderer draws; also sent over the network) ----------
 const r0 = v => Math.round(v);
 const r2 = v => Math.round(v * 100) / 100;
-const HZK = { fire: 0, poison: 1, bomb: 2, turret: 3, mine: 4, zone: 5, trap: 6, warn: 7 }, PJK = { arrow: 0, shard: 1, boomer: 2, bullet: 3, missile: 4, spike: 5, ball: 6, star: 7, note: 8, fist: 9 };
+const HZK = { fire: 0, poison: 1, bomb: 2, turret: 3, mine: 4, zone: 5, trap: 6, warn: 7, wall: 8, portal: 9, rail: 10, spring: 11, box: 12, paint: 13, pkg: 14, train: 15 }, PJK = { arrow: 0, shard: 1, boomer: 2, bullet: 3, missile: 4, spike: 5, ball: 6, star: 7, note: 8, fist: 9, dish: 10 };
 const CDP = { archer: 1.25, ice: 1.0, thunder: 2.4, bomber: 0.95, ghost: 2.8, summoner: 2.2, shotgun: 1.5, sniper: 3.2, cannon: 2.2, mage: 1.4 };
 function cdFrac(b) {
   const s = b.s, k = s.mk || b.def.key;
@@ -2029,6 +2566,13 @@ function cdFrac(b) {
 function snapshot(w) {
   const balls = w.balls.map(b => {
     const o = { i: b.id, x: r0(b.x), y: r0(b.y), vx: r0(b.vx), vy: r0(b.vy), r: r0(b.r * 10) / 10, c: b.color, g: b.glyph, tm: b.team };
+    if (b.wrap) o.bt = 1;
+    if (b.markC && b.markT > w.t) o.mk = b.markC;
+    if (b.potT > 0) o.bm = Math.ceil(b.potT);
+    if (b.linkTo && !b.linkTo.dead) o.lk = [r0(b.linkTo.x), r0(b.linkTo.y), b.linkC || '#555'];
+    if (b.s.gp) o.gp = [r0(b.s.gp[0]), r0(b.s.gp[1])];
+    if (b.possT > 0) o.ps = 1;
+    if (b.bind) o.bd = 1;
     if (b.minion) { o.m = 1; o.hp = r2(Math.max(0, b.hp / b.maxHp)); }
     if (b.dead) o.d = 1;
     if (b.flash > 0) o.fl = 1; if (b.ghost > 0) o.gh = 1; if (b.inv > 0) o.iv = 1; if (b.frozen > 0) o.fz = 1;
@@ -2051,9 +2595,9 @@ function snapshot(w) {
     return o;
   });
   return {
-    t: r2(w.t), sz: SIZE, mg: r0(w.margin), sh: r0(w.shake), hs: w.hitstop > 0 ? 1 : 0, sl: w.slow > 0 ? 1 : 0, ot: w.t > OT ? 1 : 0, balls,
+    t: r2(w.t), sz: SIZE, mg: r0(w.margin), sh: r0(w.shake), hs: w.hitstop > 0 ? 1 : 0, sl: w.slow > 0 ? 1 : 0, ts: w.tsT > 0 ? 1 : 0, ot: w.t > OT ? 1 : 0, balls,
     pj: w.proj.map(p => { const a = [PJK[p.kind] ?? 3, r0(p.x), r0(p.y), r0(p.vx), r0(p.vy), p.r, p.spin ? r2(p.spin) : 0]; if (PJK[p.kind] >= 3 || PJK[p.kind] === undefined) a.push(p.color || '#fff'); return a; }),
-    hz: w.haz.map(h => { const a = [HZK[h.kind] ?? 0, r0(h.x), r0(h.y), r0(h.r), r2(h.life / h.max), h.R || 0]; if (h.kind === 'turret') a.push(r2(h.aim || 0), h.color); if (h.kind === 'mine') a.push(h.arm > 0 ? 0 : 1); if (h.kind === 'zone' || h.kind === 'warn' || h.kind === 'trap') a.push(h.color || '#888'); return a; }),
+    hz: w.haz.map(h => { const a = [HZK[h.kind] ?? 0, r0(h.x), r0(h.y), r0(h.r), r2(h.life / h.max), h.R || 0]; if (h.kind === 'turret') a.push(r2(h.aim || 0), h.color); if (h.kind === 'mine') a.push(h.arm > 0 ? 0 : 1); if (h.kind === 'zone' || h.kind === 'warn' || h.kind === 'trap') a.push(h.color || '#888'); if (h.snap) a.push(...h.snap(h)); return a; }),
     fx: w.fx.map(f => Object.assign({}, f, { f: r2(f.life / f.max), life: undefined, max: undefined })),
     hud: w.mains.map(b => ({ hp: Math.max(0, r0(b.hp * 10) / 10), max: r0(b.maxHp), st: b.def.stat ? b.def.stat(b, w) : '', d: b.dead ? 1 : 0, bu: b.burn, po: b.poison, fz: b.frozen > 0 ? 1 : 0, ix: w.invActive(b) ? 1 : 0, ba: Math.ceil(b.barrier || 0) })),
     over: w.over ? 1 : 0, win: w.winner,
@@ -2064,7 +2608,7 @@ function decayShake(w, dt) { w.shake = Math.max(0, w.shake - dt * 40); }
 if (typeof module !== 'undefined') module.exports = { World, DEFS, ROSTER, CARDS, resolveCards, modFromEntries, buildMod, drawCard, resolveChaos, snapshot, decayShake, SIZE };
 
 // ================= RENDERER (draws snapshots; same path for host and clients) =================
-const HZ_KIND = ['fire', 'poison', 'bomb', 'turret', 'mine', 'zone', 'trap', 'warn'], PJ_KIND = ['arrow', 'shard', 'boomer', 'bullet', 'missile', 'spike', 'ball', 'star', 'note', 'fist'];
+const HZ_KIND = ['fire', 'poison', 'bomb', 'turret', 'mine', 'zone', 'trap', 'warn', 'wall', 'portal', 'rail', 'spring', 'box', 'paint', 'pkg', 'train'], PJ_KIND = ['arrow', 'shard', 'boomer', 'bullet', 'missile', 'spike', 'ball', 'star', 'note', 'fist', 'dish'];
 function shade(hex, amt) { // amt -1..1
   const n = parseInt(hex.slice(1), 16); let r = n >> 16, g = (n >> 8) & 255, b = n & 255;
   if (amt < 0) { r *= 1 + amt; g *= 1 + amt; b *= 1 + amt; } else { r += (255 - r) * amt; g += (255 - g) * amt; b += (255 - b) * amt; }
@@ -2136,8 +2680,37 @@ class Renderer {
     ctx.strokeStyle = snap.ot ? '#e5484d' : '#23262d'; ctx.lineWidth = 4; ctx.beginPath(); const q = [[mg + 2, mg + 3], [Z - mg - 3, mg + 2], [Z - mg - 2, Z - mg - 3], [mg + 3, Z - mg - 2]]; ctx.moveTo(q[0][0], q[0][1]); for (let i = 1; i <= 4; i++) { const a = q[i % 4], b = q[i - 1]; ctx.quadraticCurveTo((a[0] + b[0]) / 2 + 1.5, (a[1] + b[1]) / 2 - 1.5, a[0], a[1]); } ctx.stroke();
     // hazards
     for (const h of snap.hz) {
-      const [k, x, y, r, f, R] = h, kind = HZ_KIND[k];
-      if (kind === 'fire') {
+      const [k, x, y, r, f, R] = h, kind = HZ_KIND[k], fa = Math.min(1, f * 4);
+      if (kind === 'paint') { ctx.globalAlpha = 0.32 * fa; ctx.fillStyle = h[6]; ctx.fillRect(x - r, y - r, r * 2, r * 2); ctx.globalAlpha = 1; }
+      else if (kind === 'wall') {
+        ctx.globalAlpha = fa; ctx.lineCap = 'round'; ctx.strokeStyle = '#23262d'; ctx.lineWidth = r * 2 + 3; ctx.beginPath(); ctx.moveTo(x, y); ctx.lineTo(h[6], h[7]); ctx.stroke();
+        ctx.strokeStyle = h[8] || '#c08552'; ctx.lineWidth = r * 2 - 1; ctx.stroke();
+        const L = Math.hypot(h[6] - x, h[7] - y), ux = (h[6] - x) / (L || 1), uy = (h[7] - y) / (L || 1); ctx.strokeStyle = 'rgba(35,38,45,0.5)'; ctx.lineWidth = 1; ctx.beginPath(); for (let d = 10; d < L - 4; d += 12) { ctx.moveTo(x + ux * d - uy * r, y + uy * d + ux * r); ctx.lineTo(x + ux * d + uy * r, y + uy * d - ux * r); } ctx.stroke();
+        ctx.lineCap = 'butt'; ctx.globalAlpha = 1;
+      } else if (kind === 'portal') {
+        const t = performance.now() / 400 * (h[7] ? -1 : 1); ctx.save(); ctx.translate(x, y); ctx.globalAlpha = fa;
+        ctx.fillStyle = h[7] ? 'rgba(123,47,247,0.12)' : 'rgba(123,47,247,0.25)'; ctx.beginPath(); ctx.arc(0, 0, r, 0, 6.283); ctx.fill();
+        ctx.strokeStyle = h[6] || '#7b2ff7'; ctx.lineWidth = 3; ctx.setLineDash([8, 5]); ctx.rotate(t); ctx.beginPath(); ctx.arc(0, 0, r, 0, 6.283); ctx.stroke(); ctx.setLineDash([]);
+        ctx.strokeStyle = '#23262d'; ctx.lineWidth = 1.5; ctx.beginPath(); ctx.arc(0, 0, r * 0.55, t, t + 4); ctx.stroke(); ctx.restore(); ctx.globalAlpha = 1;
+      } else if (kind === 'rail') {
+        const x2 = h[6], y2 = h[7], L = Math.hypot(x2 - x, y2 - y) || 1, ux = (x2 - x) / L, uy = (y2 - y) / L, px = -uy * 6, py = ux * 6; ctx.globalAlpha = fa;
+        ctx.strokeStyle = '#8d6e63'; ctx.lineWidth = 3; ctx.beginPath(); for (let d = 0; d < L; d += 10) { ctx.moveTo(x + ux * d - px * 1.4, y + uy * d - py * 1.4); ctx.lineTo(x + ux * d + px * 1.4, y + uy * d + py * 1.4); } ctx.stroke();
+        ctx.strokeStyle = '#23262d'; ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(x + px, y + py); ctx.lineTo(x2 + px, y2 + py); ctx.moveTo(x - px, y - py); ctx.lineTo(x2 - px, y2 - py); ctx.stroke(); ctx.globalAlpha = 1;
+      } else if (kind === 'train') {
+        ctx.save(); ctx.translate(x, y); ctx.rotate(h[6] || 0); ctx.fillStyle = '#bc6c25'; ctx.strokeStyle = '#23262d'; ctx.lineWidth = 2.5;
+        ctx.beginPath(); ctx.rect(-17, -10, 34, 20); ctx.fill(); ctx.stroke(); ctx.fillStyle = '#ffe8c2'; ctx.fillRect(-11, -6, 7, 6); ctx.fillRect(2, -6, 7, 6);
+        ctx.fillStyle = '#23262d'; for (const s of [-1, 1]) { ctx.beginPath(); ctx.arc(-9, s * 10, 3, 0, 6.283); ctx.arc(9, s * 10, 3, 0, 6.283); ctx.fill(); } ctx.restore();
+      } else if (kind === 'spring') {
+        const nx = h[6], ny = h[7], px = -ny, py = nx, bx = x - nx * 9, by = y - ny * 9; ctx.strokeStyle = '#23262d'; ctx.lineWidth = 2.5; ctx.globalAlpha = fa; ctx.beginPath(); ctx.moveTo(bx, by);
+        for (let i = 1; i <= 6; i++) { const s = i % 2 ? 7 : -7, d = i * 3.2; ctx.lineTo(bx + nx * d + px * s, by + ny * d + py * s); } ctx.stroke();
+        ctx.strokeStyle = '#90be6d'; ctx.lineWidth = 5; ctx.lineCap = 'round'; ctx.beginPath(); ctx.moveTo(bx + nx * 21 - px * 11, by + ny * 21 - py * 11); ctx.lineTo(bx + nx * 21 + px * 11, by + ny * 21 + py * 11); ctx.stroke(); ctx.lineCap = 'butt'; ctx.globalAlpha = 1;
+      } else if (kind === 'box') {
+        ctx.fillStyle = 'rgba(67,97,238,0.10)'; ctx.fillRect(x - r, y - r, r * 2, r * 2); ctx.strokeStyle = '#4361ee'; ctx.lineWidth = 3; ctx.setLineDash([10, 5]); ctx.lineDashOffset = -performance.now() / 50; ctx.strokeRect(x - r, y - r, r * 2, r * 2); ctx.setLineDash([]);
+        ctx.fillStyle = '#fefae0'; ctx.strokeStyle = '#23262d'; ctx.lineWidth = 1.2; for (const [cx, cy] of [[x - r, y - r], [x + r, y - r], [x - r, y + r], [x + r, y + r]]) { ctx.fillRect(cx - 4, cy - 6, 8, 12); ctx.strokeRect(cx - 4, cy - 6, 8, 12); }
+      } else if (kind === 'pkg') {
+        ctx.fillStyle = '#c8a165'; ctx.strokeStyle = '#23262d'; ctx.lineWidth = 2; ctx.beginPath(); ctx.rect(x - r, y - r * 0.8, r * 2, r * 1.6); ctx.fill(); ctx.stroke();
+        ctx.strokeStyle = '#e63946'; ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(x, y - r * 0.8); ctx.lineTo(x, y + r * 0.8); ctx.moveTo(x - r, y); ctx.lineTo(x + r, y); ctx.stroke();
+      } else if (kind === 'fire') {
         const g = ctx.createRadialGradient(x, y, 0, x, y, r * 1.2); g.addColorStop(0, 'rgba(255,190,80,' + (0.55 * f) + ')'); g.addColorStop(1, 'rgba(255,80,20,0)');
         ctx.fillStyle = g; ctx.beginPath(); ctx.arc(x, y, r * 1.2, 0, 6.283); ctx.fill();
       } else if (kind === 'poison') {
@@ -2173,6 +2746,7 @@ class Renderer {
       if (b.d) continue; seen.add(b.i);
       const x = b.x + (b.fz ? 0 : b.vx * ex), y = b.y + (b.fz ? 0 : b.vy * ex);
       let tr = this.trails.get(b.i); if (!tr) { tr = []; this.trails.set(b.i, tr); }
+      if (tr.length && Math.abs(tr[tr.length - 1][0] - x) + Math.abs(tr[tr.length - 1][1] - y) > 120) tr.length = 0;
       tr.push([x, y]); if (tr.length > (b.m ? 4 : 7)) tr.shift();
       for (let i = 0; i < tr.length - 1; i++) { ctx.globalAlpha = (i / tr.length) * 0.18; ctx.fillStyle = b.c; ctx.beginPath(); ctx.arc(tr[i][0], tr[i][1], b.r * (0.5 + i / tr.length / 2), 0, 6.283); ctx.fill(); }
       ctx.globalAlpha = 1;
@@ -2209,6 +2783,9 @@ class Renderer {
       } else if (kind === 'fist') {
         ctx.fillStyle = pc || '#adb5bd'; ctx.strokeStyle = '#23262d'; ctx.lineWidth = 2; ctx.beginPath(); ctx.rect(-r, -r * 0.8, r * 1.8, r * 1.6); ctx.fill(); ctx.stroke();
         ctx.fillStyle = '#ff9b3d'; ctx.beginPath(); ctx.moveTo(-r, -r * 0.4); ctx.lineTo(-r * 2.2, 0); ctx.lineTo(-r, r * 0.4); ctx.fill();
+      } else if (kind === 'dish') {
+        ctx.rotate(-a + performance.now() / 150); ctx.fillStyle = '#fff'; ctx.strokeStyle = '#23262d'; ctx.lineWidth = 1.5; ctx.beginPath(); ctx.ellipse(0, 0, r * 1.4, r * 1.1, 0, 0, 6.283); ctx.fill(); ctx.stroke();
+        ctx.fillStyle = pc || '#ffb703'; ctx.beginPath(); ctx.arc(0, -1, r * 0.75, 0, 6.283); ctx.fill();
       } else if (kind === 'boomer') {
         ctx.lineCap = 'round'; ctx.beginPath(); ctx.moveTo(-r, -r * 0.6); ctx.lineTo(0, 0); ctx.lineTo(-r, r * 0.6); ctx.strokeStyle = '#23262d'; ctx.lineWidth = 9; ctx.stroke(); ctx.strokeStyle = '#ffb74d'; ctx.lineWidth = 5; ctx.stroke(); ctx.lineCap = 'butt';
       }
@@ -2235,6 +2812,7 @@ class Renderer {
     }
     ctx.globalAlpha = 1; this.parts = this.parts.filter(p => p.life > 0);
     if (this.parts.length > 600) this.parts.splice(0, this.parts.length - 600);
+    if (snap.ts) { ctx.fillStyle = 'rgba(110,90,40,0.16)'; ctx.fillRect(0, 0, Z, Z); ctx.strokeStyle = 'rgba(255,214,10,0.7)'; ctx.lineWidth = 6; ctx.strokeRect(6, 6, Z - 12, Z - 12); }
     // floating numbers
     ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
     for (const t of this.texts) {
@@ -2276,7 +2854,18 @@ class Renderer {
   }
   drawBall(ctx, b, ex) {
     const x = b.x + (b.fz ? 0 : b.vx * ex), y = b.y + (b.fz ? 0 : b.vy * ex), r = b.r;
+    if (b.bt) { // little bat
+      const a = Math.atan2(b.vy, b.vx), fl = Math.sin(performance.now() / 45 + b.i) * 0.6;
+      ctx.save(); ctx.translate(x, y); ctx.rotate(a + 1.571); ctx.fillStyle = b.c; ctx.strokeStyle = '#23262d'; ctx.lineWidth = 1.2;
+      for (const s of [-1, 1]) { ctx.beginPath(); ctx.moveTo(0, -1); ctx.quadraticCurveTo(s * r * 1.6, -r * (1.4 + fl), s * r * 2.6, -r * (0.2 + fl)); ctx.quadraticCurveTo(s * r * 1.8, 0, s * r * 1.4, r * 0.4); ctx.quadraticCurveTo(s * r * 0.8, -r * 0.1, 0, r * 0.5); ctx.closePath(); ctx.fill(); ctx.stroke(); }
+      ctx.beginPath(); ctx.arc(0, 0, r * 0.75, 0, 6.283); ctx.fill(); ctx.stroke();
+      ctx.fillStyle = '#ff5d73'; ctx.fillRect(-r * 0.4, -r * 0.3, 1.5, 1.5); ctx.fillRect(r * 0.4 - 1.5, -r * 0.3, 1.5, 1.5);
+      ctx.restore(); return;
+    }
     if (b.au) { ctx.fillStyle = b.au[1]; ctx.globalAlpha = 0.07; ctx.beginPath(); ctx.arc(x, y, b.au[0], 0, 6.283); ctx.fill(); ctx.globalAlpha = 0.35; ctx.strokeStyle = b.au[1]; ctx.lineWidth = 1.5; ctx.setLineDash([4, 6]); ctx.lineDashOffset = -performance.now() / 40; ctx.stroke(); ctx.setLineDash([]); ctx.globalAlpha = 1; }
+    if (b.lk) { ctx.strokeStyle = b.lk[2]; ctx.lineWidth = 2; ctx.setLineDash([2, 5]); ctx.beginPath(); ctx.moveTo(x, y); ctx.lineTo(b.lk[0], b.lk[1]); ctx.stroke(); ctx.setLineDash([]); }
+    if (b.gp) { ctx.strokeStyle = 'rgba(128,222,234,0.8)'; ctx.lineWidth = 1.5; ctx.setLineDash([4, 4]); ctx.beginPath(); ctx.arc(b.gp[0], b.gp[1], r, 0, 6.283); ctx.stroke(); ctx.setLineDash([]); }
+    if (b.bd) { ctx.fillStyle = 'rgba(60,9,108,0.35)'; ctx.beginPath(); ctx.ellipse(x, y + r * 0.6, r * 1.5, r * 0.6, 0, 0, 6.283); ctx.fill(); }
     if (b.tl) { ctx.strokeStyle = '#5d6370'; ctx.lineWidth = 3; ctx.setLineDash([6, 4]); ctx.beginPath(); ctx.moveTo(x, y); ctx.lineTo(b.tl[0], b.tl[1]); ctx.stroke(); ctx.setLineDash([]); }
     if (b.sn !== undefined) { ctx.strokeStyle = 'rgba(255,90,90,0.35)'; ctx.lineWidth = 1; ctx.beginPath(); ctx.moveTo(x, y); ctx.lineTo(x + Math.cos(b.sn) * 600, y + Math.sin(b.sn) * 600); ctx.stroke(); }
     ctx.globalAlpha = b.gh ? 0.35 : 1;
@@ -2314,6 +2903,12 @@ class Renderer {
     if (b.fz) { ctx.fillStyle = 'rgba(190,232,255,0.55)'; ctx.strokeStyle = '#e6f7ff'; ctx.lineWidth = 2; ctx.beginPath(); for (let i = 0; i < 6; i++) { const a = i * 1.047 + 0.52; ctx.lineTo(x + Math.cos(a) * (r + 5), y + Math.sin(a) * (r + 5)); } ctx.closePath(); ctx.fill(); ctx.stroke(); }
     else if (b.ch) { ctx.strokeStyle = 'rgba(150,215,255,0.8)'; ctx.lineWidth = 3; ctx.beginPath(); ctx.arc(x, y, r + 3, 0, 6.283 * b.ch / 0.6); ctx.stroke(); }
     if (b.ix) { ctx.save(); ctx.translate(x, y); ctx.rotate(performance.now() / 300); ctx.strokeStyle = '#7dffa8'; ctx.lineWidth = 2.5; ctx.setLineDash([7, 5]); ctx.beginPath(); ctx.arc(0, 0, r + 9, 0, 6.283); ctx.stroke(); ctx.setLineDash([]); ctx.fillStyle = '#7dffa8'; ctx.font = '700 11px sans-serif'; ctx.fillText('±', r + 9, 0); ctx.restore(); }
+    if (b.mk) { ctx.save(); ctx.translate(x, y); ctx.rotate(-performance.now() / 600); ctx.strokeStyle = b.mk; ctx.lineWidth = 2; ctx.setLineDash([3, 4]); ctx.beginPath(); ctx.arc(0, 0, r + 10, 0, 6.283); ctx.stroke(); ctx.setLineDash([]); ctx.restore(); }
+    if (b.ps) { ctx.strokeStyle = '#9d8df1'; ctx.lineWidth = 3; ctx.beginPath(); for (let i = 0; i <= 40; i++) { const a = i / 40 * 6.283, rr = r + 7 + Math.sin(a * 6 + performance.now() / 120) * 2.5; ctx.lineTo(x + Math.cos(a) * rr, y + Math.sin(a) * rr); } ctx.stroke();
+      ctx.font = '700 13px "LXGW WenKai TC", sans-serif'; ctx.fillStyle = '#9d8df1'; ctx.strokeStyle = '#fffdf7'; ctx.lineWidth = 3; ctx.strokeText('附', x + r * 0.8, y - r * 0.9); ctx.fillText('附', x + r * 0.8, y - r * 0.9); }
+    if (b.bm) { const bx = x, by = y - r - 15; ctx.fillStyle = '#20232b'; ctx.strokeStyle = '#23262d'; ctx.beginPath(); ctx.arc(bx, by, 10, 0, 6.283); ctx.fill();
+      ctx.strokeStyle = (Math.floor(performance.now() / (b.bm <= 2 ? 90 : 250)) % 2) ? '#ff5530' : '#ffdd55'; ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(bx + 6, by - 7); ctx.lineTo(bx + 10, by - 12); ctx.stroke();
+      ctx.font = '700 13px "Patrick Hand", sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillStyle = '#fff'; ctx.fillText(b.bm, bx, by + 1); }
     if (b.ba) { ctx.strokeStyle = 'rgba(143,233,255,0.7)'; ctx.lineWidth = 3; ctx.beginPath(); ctx.arc(x, y, r + 4, 0, 6.283); ctx.stroke(); }
     if (b.iv) { ctx.strokeStyle = 'rgba(255,215,90,' + (0.5 + 0.4 * Math.sin(performance.now() / 80)) + ')'; ctx.lineWidth = 3; ctx.beginPath(); ctx.arc(x, y, r + 6, 0, 6.283); ctx.stroke(); }
     if (b.bu && Math.random() < 0.15 + b.bu * 0.02) this.parts.push({ x: x + (Math.random() - 0.5) * r * 1.4, y: y + (Math.random() - 0.5) * r, vx: 0, vy: -90, life: 0.45, max: 0.45, c: Math.random() < 0.5 ? '#ffb347' : '#ff6a1a', s: 4 });
@@ -2446,6 +3041,7 @@ const Net = {
   },
 };
 
+const PAY_MIN = 1.5; // 押中保底：至少拿回押注的 1.5 倍
 // ================= GAME (host-authoritative state machine + UI) =================
 const START_CHIPS = 100, MIN_BET = 10, HAND_START = 6, HAND_DRAW = 4, HAND_MAX = 10, MAX_PLAYERS = 8;
 const BOT_NAMES = ['阿呆', '小黑', '胖虎', '豆花', '鐵蛋', '波波', '阿嬤', '旺財'];
@@ -2697,12 +3293,12 @@ class Host {
       const winners = bets.filter(([, b]) => b.f === win), wt = winners.reduce((s, [, b]) => s + b.amt, 0);
       let paid = 0;
       for (const [pid, b] of bets) {
-        const got = b.f === win && wt > 0 ? Math.floor(pool * b.amt / wt) : 0; paid += got;
+        const got = b.f === win && wt > 0 ? Math.max(Math.floor(pool * b.amt / wt), Math.floor(b.amt * PAY_MIN)) : 0; paid += got;
         rows.push({ pid, f: b.f, amt: b.amt, got });
       }
-      if (wt > 0) { const top = rows.filter(r => r.got > 0).sort((a, b) => b.amt - a.amt)[0]; if (top) top.got += pool - paid; paid = pool; }
+      if (wt > 0 && paid < pool) { const top = rows.filter(r => r.got > 0).sort((a, b) => b.amt - a.amt)[0]; if (top) top.got += pool - paid; paid = pool; }
       for (const r of rows) { const p = this.P(r.pid); if (p) p.chips += r.got; }
-      carryOut = pool - paid;
+      carryOut = Math.max(0, pool - paid);
     }
     let rep = null;
     if (G.settings.draft && win >= 0 && G.owners[win]) { const o = this.P(G.owners[win]); if (o) { o.chips += 50; rep = { pid: o.id, amt: 50 }; } }
@@ -2810,7 +3406,7 @@ const App = {
   onFrame(m) { this.renderer.feed(m.s, m.e); this.updateHud(m.s); },
   onView(v) {
     const prev = this.view; this.view = v;
-    if (!prev || prev.round !== v.round) { this.ui.fview = {}; this.ui.hudOpen = {}; }
+    if (!prev || prev.round !== v.round) { this.ui.fview = {}; this.ui.hudOpen = {}; this.ui.rview = {}; }
     if (!prev || prev.phase !== v.phase || prev.turn !== v.turn || prev.round !== v.round) { this.ui.sel = null; if (prev && prev.phase !== v.phase && this.cancelDrag) this.cancelDrag(); }
     if (v.phase === 'bet' && (!prev || prev.phase !== 'bet')) { this.ui.betF = null; this.ui.betAmt = Math.min(v.chips, Math.max(MIN_BET, Math.round(v.chips * 0.25))); }
     if (v.phase === 'battle' && v.bstate === 'intro' && (!prev || prev.phase !== 'battle')) { this.introAt = performance.now(); this.renderer.reset(); }
@@ -2942,10 +3538,10 @@ const App = {
           '<p class="wait-note">等其他人下注</p>' + this.myPlaysSummary(v);
       }
       const LB = v.liveBets, tot = LB ? LB.reduce((a, b) => a + b.amt, 0) + v.carry : 0;
-      const live = i => { if (!LB) return ''; const bs = LB.filter(b => b.f === i), t = bs.reduce((a, b) => a + b.amt, 0); return '<span class="lb">押 ' + t + (t ? '・賠率 ×' + (tot / t).toFixed(1) : '') + (bs.length ? '（' + bs.map(b => esc(b.name)).join('、') + '）' : '') + '</span>'; };
+      const live = i => { if (!LB) return ''; const bs = LB.filter(b => b.f === i), t = bs.reduce((a, b) => a + b.amt, 0); return '<span class="lb">押 ' + t + (t ? '・賠率 ×' + Math.max(PAY_MIN, tot / t).toFixed(1) : '') + (bs.length ? '（' + bs.map(b => esc(b.name)).join('、') + '）' : '') + '</span>'; };
       const fs = grid(i => this.fighterCard(v, i, { cls: ui.betF === i ? 'picked' : '', act: 'betF', noToggle: !S.cards, noCount: !S.cards, view: S.cards ? undefined : 'skill', live: live(i) }), 'fxgrid' + (n > 4 ? ' many' : ''));
       const max = v.chips, min = Math.min(MIN_BET, max);
-      return this.title(v, '下注', this.roundTag(v)) + '<p class="tip">點一顆球押它，押中的人按比例分掉獎池' + (v.carry ? '（含累積 ' + v.carry + '）' : '') + '。</p>' + fs +
+      return this.title(v, '下注', this.roundTag(v)) + '<p class="tip">點一顆球押它，押中的人按比例分掉獎池' + (v.carry ? '（含累積 ' + v.carry + '）' : '') + '，最少拿回押注的 1.5 倍。</p>' + fs +
         '<div class="betbox sheet sk' + (n > 4 ? ' sticky-actions' : '') + '"><div class="betamt"><i class="chip" style="width:24px;height:24px"></i><b id="betLabel">' + ui.betAmt + '</b><span class="muted">/ ' + max + '</span></div>' +
         (max > min ? '<input type="range" id="betAmt" min="' + min + '" max="' + max + '" step="1" value="' + ui.betAmt + '" aria-label="押注金額">' : '<input type="range" min="0" max="1" value="1" disabled aria-label="全押">') +
         '<div class="chipbtns"><button class="chipbtn" data-act="betQ" data-v="min">最少</button><button class="chipbtn" style="--c:var(--buff)" data-act="betQ" data-v="+10">+10</button><button class="chipbtn" style="--c:var(--flip)" data-act="betQ" data-v="0.5">一半</button><button class="chipbtn" style="--c:var(--debuff)" data-act="betQ" data-v="1">全押</button></div>' +
@@ -2996,8 +3592,9 @@ const App = {
       }).join('') || '<li class="none">沒有人丟牌</li>';
       const bets = R.bets.filter(b => b.f === i), tot = bets.reduce((s, b) => s + b.amt, 0);
       const winCls = v.result && v.result.win === i ? ' won' : (v.result ? ' lost' : '');
-      return '<div class="rcol sk' + winCls + '"><div class="rh">' + this.ballHtml(f.key, 32) + '<b>' + d.name + '</b>' + (v.result && v.result.win === i ? '<span class="wbadge">勝</span>' : '') + '</div>' +
-        '<ul class="rplays">' + plays + '</ul><div class="rbets">押注 <b>' + tot + '</b>' + (bets.length ? '：' + bets.map(b => '<span class="' + (b.mine ? 'mine' : '') + '">' + esc(b.name) + ' ' + b.amt + '</span>').join('、') : '') + '</div></div>';
+      const sv = (this.ui.rview || {})[i] === 'skill';
+      return '<div class="rcol sk' + winCls + '"><div class="rh">' + this.ballHtml(f.key, 32) + '<b>' + d.name + '</b>' + (v.result && v.result.win === i ? '<span class="wbadge">勝</span>' : '') + '<button class="fv" data-act="rview" data-i="' + i + '">' + (sv ? '看牌' : '看技能') + '</button></div>' +
+        (sv ? '<p class="sk-desc rdesc">' + d.desc + '</p>' : '<ul class="rplays">' + plays + '</ul>') + '<div class="rbets">押注 <b>' + tot + '</b>' + (bets.length ? '：' + bets.map(b => '<span class="' + (b.mine ? 'mine' : '') + '">' + esc(b.name) + ' ' + b.amt + '</span>').join('、') : '') + '</div></div>';
     }).join('');
     let res = '';
     if (v.phase === 'result' && v.result) {
@@ -3176,6 +3773,7 @@ const App = {
       case 'pass': this.act({ t: 'play', card: null }); return;
       case 'lockF': this.act({ t: 'lock', i: +t.dataset.i }); return;
       case 'draftPick': this.act({ t: 'draft', k: t.dataset.k }); return;
+      case 'rview': { const k = +t.dataset.i; ui.rview = ui.rview || {}; ui.rview[k] = ui.rview[k] === 'skill' ? 'cards' : 'skill'; break; }
       case 'fview': { const k = +t.dataset.i; ui.fview[k] = (ui.fview[k] || 'skill') === 'skill' ? 'cards' : 'skill'; break; }
       case 'hud': { const k = +t.dataset.i; ui.hudOpen[k] = !ui.hudOpen[k]; this.hudBuilt = ''; break; }
       case 'sheet': ui.sheet = !ui.sheet; break;
