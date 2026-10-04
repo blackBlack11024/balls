@@ -305,7 +305,7 @@ footer.foot { text-align: center; color: var(--ink3); font-size: 14px; padding: 
   </div>
   <div class="wrap rules">
     <div data-n="1"><b>選手登場</b><p>每局隨機抽出 2～4 顆能力球，房主可以重抽。</p></div>
-    <div data-n="2"><b>祕密丟牌</b><p>每輪把一張手牌丟給任一顆球，或跳過。別人只看得到每顆球收到幾張。</p></div>
+    <div data-n="2"><b>祕密丟牌</b><p>大家同時出牌，想丟幾張給哪顆球都行。別人只看得到每顆球收到幾張。</p></div>
     <div data-n="3"><b>下注</b><p>押籌碼賭誰會贏（最少 10）。押中的人按比例分掉整個獎池。</p></div>
     <div data-n="4"><b>揭牌開打</b><p>牌一張張翻開飛到選手身上，然後開打。打完設定局數，籌碼最多的人贏。</p></div>
   </div>
@@ -446,6 +446,7 @@ class World {
     fn(); if (m.growth && Math.random() < m.growth) fn();
   }
   damage(t, amt, src, o = {}) {
+    if (this.locked !== undefined && !t.minion) return false;
     if (!t || t.dead || amt <= 0) return false;
     if (t.ghost > 0) { this.text(t.x, t.y - t.r - 6, '閃避', '#cdbfff', 13); return false; }
     if (t.inv > 0) { this.text(t.x, t.y - t.r - 6, '無敵', '#ffe08a', 13); return false; }
@@ -500,6 +501,7 @@ class World {
     return true;
   }
   dot(t, amt, color, raw) {
+    if (this.locked !== undefined && !t.minion) return;
     if (t.dead || amt <= 0) return;
     if (t.inv > 0 && !raw) return;
     if (!raw) {
@@ -512,6 +514,7 @@ class World {
   }
   kill(t, src) {
     if (t.dead) return;
+    if (this.locked !== undefined && !t.minion) { t.hp = Math.max(t.hp, 1); return; }
     if (!t.minion && (t.mod.reviveFull > 0 || t.mod.revive > 0)) {
       const full = t.mod.reviveFull > 0; if (full) t.mod.reviveFull--; else t.mod.revive--;
       t.hp = full ? t.maxHp : Math.min(t.maxHp, 40); t.inv = 1.2; t.burn = 0; t.poison = 0;
@@ -522,14 +525,18 @@ class World {
     if (!t.minion) {
       this.burst(t.x, t.y, t.color, 40); this.ring(t.x, t.y, 120, t.color, 0.7);
       this.shake = 20; this.hitstop = 0.35; this.ev({ k: 'kill' });
-      this.text(t.x, t.y, '擊倒！', '#ffffff', 30);
+      if (this.mains.filter(b => !b.dead).length > 1) this.text(t.x, t.y, '擊倒！', '#ffffff', 30);
       for (const m of this.balls) if (m.master === t && !m.dead) { m.dead = true; this.burst(m.x, m.y, m.color, 6); }
+      const alive = this.mains.filter(b => !b.dead);
+      if (alive.length <= 1 && !this.ending) {
+        // last one standing: lock the result, protect the survivor, play the final-blow slow motion
+        this.ending = 1.0; this.locked = alive.length ? alive[0].team : -1; this.slow = 1.8; this.hitstop = 0.06;
+        this.ev({ k: 'finale', x: Math.round(t.x), y: Math.round(t.y), c: t.color, w: alive.length ? alive[0].color : '#fff' });
+      }
       if (t.mod.deathBomb) {
         this.ring(t.x, t.y, 120, '#ff6a3d', 0.6); this.ev({ k: 'boom' });
         for (const e of this.balls) { if (e.dead || e.team === t.team) continue; const d = Math.hypot(e.x - t.x, e.y - t.y); if (d < 120 + e.r) this.damage(e, t.mod.deathBomb, null, { knock: 500, kx: (e.x - t.x) / (d || 1), ky: (e.y - t.y) / (d || 1), color: '#ffab70' }); }
       }
-      const alive = this.mains.filter(b => !b.dead);
-      if (alive.length <= 1 && !this.ending) this.ending = 1.6;
     } else { this.burst(t.x, t.y, t.color, 8); }
   }
   contact(a, e) {
@@ -602,8 +609,7 @@ class World {
       this.ending -= dt;
       if (this.ending <= 0) {
         this.over = true;
-        const alive = this.mains.filter(b => !b.dead);
-        this.winner = alive.length === 1 ? alive[0].team : -1;
+        this.winner = this.locked ?? -1;
         this.ev({ k: 'win', team: this.winner });
       }
     }
@@ -995,7 +1001,7 @@ function fireBullet(w, b, a, o) {
   const sp = o.speed || 500;
   return w.shoot(Object.assign({ kind: 'bullet', x: b.x + Math.cos(a) * b.r, y: b.y + Math.sin(a) * b.r, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp, r: 4, dmg: 1, team: b.team, owner: b, color: b.color, life: 2.5 }, o));
 }
-function every(b, key, dt, period, fn) { b.s[key] = (b.s[key] ?? period * 0.6) - dt; if (b.s[key] <= 0) { b.s[key] = typeof period === 'function' ? period() : period; fn(); } }
+function every(b, key, dt, period, fn) { b.s._cp = period; b.s[key] = (b.s[key] ?? period * 0.6) - dt; if (b.s[key] <= 0) { b.s[key] = typeof period === 'function' ? period() : period; fn(); } }
 function aoe(w, b, x, y, R, dmg, o) {
   let n = 0;
   for (const e of w.balls) { if (e.dead || e.team === b.team) continue; const d = Math.hypot(e.x - x, e.y - y); if (d < R + e.r && w.damage(e, dmg, b, Object.assign({ kx: (e.x - x) / (d || 1), ky: (e.y - y) / (d || 1) }, o))) n++; }
@@ -1326,6 +1332,14 @@ function buildMod(cardKeys) {
 const r0 = v => Math.round(v);
 const r2 = v => Math.round(v * 100) / 100;
 const HZK = { fire: 0, poison: 1, bomb: 2, turret: 3, mine: 4 }, PJK = { arrow: 0, shard: 1, boomer: 2, bullet: 3, missile: 4, spike: 5, ball: 6 };
+const CDP = { archer: 1.25, ice: 1.0, thunder: 2.4, bomber: 0.95, ghost: 2.8, summoner: 2.2, shotgun: 1.5, sniper: 3.2, cannon: 2.2, mage: 1.4 };
+function cdFrac(b) {
+  const k = b.def.key, s = b.s;
+  if (k === 'laser') return s.state === 'fire' ? 1 : clamp(1 - s.t / 2.2, 0, 1);
+  if (k === 'boomerang') return s.held ? clamp(1 - s.cd / 0.6, 0, 1) : 0;
+  const p = CDP[k] || s._cp; if (!p || p < 0.8 || s.cd === undefined) return -1;
+  return clamp(1 - s.cd / p, 0, 1);
+}
 function snapshot(w) {
   const balls = w.balls.map(b => {
     const o = { i: b.id, x: r0(b.x), y: r0(b.y), vx: r0(b.vx), vy: r0(b.vy), r: r0(b.r * 10) / 10, c: b.color, g: b.glyph, tm: b.team };
@@ -1344,12 +1358,13 @@ function snapshot(w) {
     if (b.def.tether) { const tl = b.def.tether(b); if (tl) o.tl = tl; }
     if (k === 'sniper' || k === 'gunner') o.sn = r2(b.s.aim || 0);
     if (!b.minion && w.invActive(b)) o.ix = 1;
+    if (!b.minion) { const cf = cdFrac(b); if (cf >= 0) o.cd = r2(cf); }
     if (b.barrier > 0) o.ba = 1;
     if (k === 'laser') { o.aim = r2(s.aim); o.ls = s.state === 'fire' ? 2 : 1; o.lt = r2(s.t); o.ll = r0(s.len || 0); o.lw = r0(8 + s.power * 0.4); }
     return o;
   });
   return {
-    t: r2(w.t), mg: r0(w.margin), sh: r0(w.shake), hs: w.hitstop > 0 ? 1 : 0, ot: w.t > OT ? 1 : 0, balls,
+    t: r2(w.t), mg: r0(w.margin), sh: r0(w.shake), hs: w.hitstop > 0 ? 1 : 0, sl: w.slow > 0 ? 1 : 0, ot: w.t > OT ? 1 : 0, balls,
     pj: w.proj.map(p => { const a = [PJK[p.kind] ?? 3, r0(p.x), r0(p.y), r0(p.vx), r0(p.vy), p.r, p.spin ? r2(p.spin) : 0]; if (PJK[p.kind] >= 3 || PJK[p.kind] === undefined) a.push(p.color || '#fff'); return a; }),
     hz: w.haz.map(h => { const a = [HZK[h.kind] ?? 0, r0(h.x), r0(h.y), r0(h.r), r2(h.life / h.max), h.R || 0]; if (h.kind === 'turret') a.push(r2(h.aim || 0), h.color); if (h.kind === 'mine') a.push(h.arm > 0 ? 0 : 1); return a; }),
     fx: w.fx.map(f => Object.assign({}, f, { f: r2(f.life / f.max), life: undefined, max: undefined })),
@@ -1394,13 +1409,14 @@ class Renderer {
     this.cv = canvas; this.ctx = canvas.getContext('2d'); this.parts = []; this.texts = []; this.trails = new Map();
     this.snap = null; this.recv = 0; this.shake = 0;
   }
-  reset() { this.parts = []; this.texts = []; this.trails.clear(); this.snap = null; }
+  reset() { this.parts = []; this.texts = []; this.trails.clear(); this.snap = null; this.finale = null; }
   feed(snap, events) { this.snap = snap; this.recv = performance.now(); if (events) for (const e of events) this.event(e); }
   event(e) {
     const light = c => !c || c === '#fff' || c === '#ffffff' || c === '#ffe9a8' || c === '#e0f4ff' || c === '#bfe3ff';
     if (e.k === 'text') this.texts.push({ x: e.x, y: e.y, s: e.s, c: light(e.c) ? '#23262d' : e.c, ink: light(e.c), z: e.z, life: 0.9, vy: -40 });
     else if (e.k === 'spark') for (let i = 0; i < e.n; i++) { const a = Math.random() * 6.283, v = 120 + Math.random() * 260; this.parts.push({ x: e.x, y: e.y, vx: Math.cos(a) * v, vy: Math.sin(a) * v, life: 0.25, max: 0.25, c: light(e.c) ? '#23262d' : e.c, line: 1, s: 2 }); }
     else if (e.k === 'burst') for (let i = 0; i < e.n; i++) { const a = Math.random() * 6.283, v = 60 + Math.random() * 240; this.parts.push({ x: e.x, y: e.y, vx: Math.cos(a) * v, vy: Math.sin(a) * v, life: 0.5, max: 0.5, c: e.c, s: 2 + Math.random() * 3 }); }
+    else if (e.k === 'finale') { this.finale = { x: e.x, y: e.y, c: e.c, w: e.w, t0: performance.now() }; SFX.play('kill'); setTimeout(() => SFX.play('win'), 700); }
     else SFX.play(e.k, e.amt);
     if (e.k === 'wall' || e.k === 'bump') SFX.play('wall');
   }
@@ -1414,10 +1430,13 @@ class Renderer {
     ctx.setTransform(1, 0, 0, 1, 0, 0);
     ctx.fillStyle = '#fbf8f1'; ctx.fillRect(0, 0, this.cv.width, this.cv.height);
     if (!snap) return;
-    const ex = snap.hs || snap.over ? 0 : Math.min(0.07, (performance.now() - this.recv) / 1000); // extrapolation time
+    let ex = snap.hs || snap.over ? 0 : Math.min(0.07, (performance.now() - this.recv) / 1000); // extrapolation time
+    if (snap.sl) { ex *= 0.18; dtReal *= 0.3; }
+    const F = this.finale, ft = F ? (performance.now() - F.t0) / 1000 : 99, bell = ft < 2.4 ? Math.sin(Math.min(1, ft / 2.4) * Math.PI) : 0;
     this.shake = Math.max(this.shake * 0.9, snap.sh || 0);
     const shx = (Math.random() - 0.5) * this.shake * 0.9, shy = (Math.random() - 0.5) * this.shake * 0.9;
-    ctx.setTransform(S, 0, 0, S, shx * S, shy * S);
+    if (false && bell > 0) { const z = 1 + 0.3 * bell, fx = F.x + (SIZE / 2 - F.x) * 0.35 * bell, fy = F.y + (SIZE / 2 - F.y) * 0.35 * bell; ctx.setTransform(S * z, 0, 0, S * z, S * (fx - F.x * z) + shx * S, S * (fy - F.y * z) + shy * S); }
+    else ctx.setTransform(S, 0, 0, S, shx * S, shy * S);
     // floor
     ctx.fillStyle = '#fffdf7'; ctx.fillRect(0, 0, SIZE, SIZE);
     ctx.strokeStyle = 'rgba(70,125,195,0.17)'; ctx.lineWidth = 1;
@@ -1522,6 +1541,33 @@ class Renderer {
     ctx.globalAlpha = 1; this.texts = this.texts.filter(t => t.life > 0);
     if (this.texts.length > 80) this.texts.splice(0, this.texts.length - 80);
   }
+  drawFinale(ctx, S, F, ft, bell) {
+    ctx.setTransform(S, 0, 0, S, 0, 0);
+    // white flash
+    if (ft < 0.35) { ctx.fillStyle = 'rgba(255,255,255,' + (0.85 * (1 - ft / 0.35)) + ')'; ctx.fillRect(0, 0, SIZE, SIZE); }
+    // ink speed lines from the impact point
+    if (ft < 1.6) {
+      const a = 1 - ft / 1.6; ctx.strokeStyle = 'rgba(35,38,45,' + (0.55 * a) + ')'; ctx.lineCap = 'round';
+      if (!F.lines) { F.lines = []; for (let i = 0; i < 26; i++) F.lines.push([Math.random() * 6.283, 60 + Math.random() * 80, 1.5 + Math.random() * 3]); }
+      for (const [an, r0, lw] of F.lines) { const r1 = r0 + 40 + ft * 260, r2 = r1 + 60 + ft * 120; ctx.lineWidth = lw; ctx.beginPath(); ctx.moveTo(F.x + Math.cos(an) * r1, F.y + Math.sin(an) * r1); ctx.lineTo(F.x + Math.cos(an) * r2, F.y + Math.sin(an) * r2); ctx.stroke(); }
+      ctx.lineCap = 'butt';
+    }
+    // shockwave rings
+    for (let k = 0; k < 3; k++) { const tt = ft - k * 0.15; if (tt <= 0 || tt > 1) continue; ctx.strokeStyle = k === 1 ? F.c : '#23262d'; ctx.globalAlpha = 1 - tt; ctx.lineWidth = 6 * (1 - tt) + 1; ctx.beginPath(); ctx.arc(F.x, F.y, 20 + tt * 260, 0, 6.283); ctx.stroke(); }
+    ctx.globalAlpha = 1;
+    // cinematic bars
+    const bar = 46 * Math.min(1, bell * 2.2); if (bar > 0) { ctx.fillStyle = '#23262d'; ctx.fillRect(0, 0, SIZE, bar); ctx.fillRect(0, SIZE - bar, SIZE, bar); }
+    // K.O. stamp
+    if (ft > 0.15 && ft < 2.6) {
+      const p = Math.min(1, (ft - 0.15) / 0.25), sc = 2.2 - 1.2 * p, al = ft > 2.2 ? (2.6 - ft) / 0.4 : 1;
+      ctx.save(); ctx.globalAlpha = al; ctx.translate(SIZE / 2, SIZE / 2 - 10); ctx.rotate(-0.12); ctx.scale(sc, sc);
+      ctx.font = '700 86px "Patrick Hand", "LXGW WenKai TC", sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.lineJoin = 'round';
+      ctx.lineWidth = 14; ctx.strokeStyle = '#23262d'; ctx.strokeText('K.O.!', 5, 7);
+      ctx.lineWidth = 10; ctx.strokeStyle = '#23262d'; ctx.strokeText('K.O.!', 0, 0); ctx.fillStyle = '#ffe45c'; ctx.fillText('K.O.!', 0, 0);
+      ctx.font = '700 26px "LXGW WenKai TC", sans-serif'; ctx.lineWidth = 6; ctx.strokeStyle = '#fffdf7'; ctx.strokeText('最後一擊', 0, 62); ctx.fillStyle = '#e5484d'; ctx.fillText('最後一擊', 0, 62);
+      ctx.restore();
+    }
+  }
   drawBall(ctx, b, ex) {
     const x = b.x + (b.fz ? 0 : b.vx * ex), y = b.y + (b.fz ? 0 : b.vy * ex), r = b.r;
     if (b.au) { ctx.fillStyle = b.au[1]; ctx.globalAlpha = 0.07; ctx.beginPath(); ctx.arc(x, y, b.au[0], 0, 6.283); ctx.fill(); ctx.globalAlpha = 0.35; ctx.strokeStyle = b.au[1]; ctx.lineWidth = 1.5; ctx.setLineDash([4, 6]); ctx.lineDashOffset = -performance.now() / 40; ctx.stroke(); ctx.setLineDash([]); ctx.globalAlpha = 1; }
@@ -1550,6 +1596,12 @@ class Renderer {
       ctx.font = '700 ' + Math.round(r * 1.0) + 'px "LXGW WenKai TC", "Noto Sans TC", sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
       ctx.lineWidth = 3.5; ctx.lineJoin = 'round'; ctx.strokeStyle = '#23262d'; ctx.strokeText(b.g, x, y + r * 0.04);
       ctx.fillStyle = 'rgba(255,255,255,0.96)'; ctx.fillText(b.g, x, y + r * 0.04);
+    }
+    if (b.cd !== undefined) {
+      const R = r + 6, ready = b.cd >= 0.999;
+      ctx.lineWidth = 4; ctx.strokeStyle = 'rgba(35,38,45,0.15)'; ctx.beginPath(); ctx.arc(x, y, R, 0, 6.283); ctx.stroke();
+      ctx.strokeStyle = ready ? '#ffd23f' : b.c; ctx.lineCap = 'round'; ctx.beginPath(); ctx.arc(x, y, R, -1.5708, -1.5708 + 6.283 * b.cd); ctx.stroke(); ctx.lineCap = 'butt';
+      ctx.lineWidth = 1.2; ctx.strokeStyle = '#23262d'; ctx.beginPath(); ctx.arc(x, y, R + 2.5, -1.5708, -1.5708 + 6.283 * b.cd); ctx.stroke();
     }
     if (b.m && b.hp < 1) { ctx.strokeStyle = '#23262d'; ctx.lineWidth = 2; ctx.beginPath(); ctx.arc(x, y, r + 3, -1.57, -1.57 + 6.283 * b.hp); ctx.stroke(); }
     if (b.fl) { ctx.fillStyle = 'rgba(255,255,255,0.75)'; ctx.beginPath(); ctx.arc(x, y, r, 0, 6.283); ctx.fill(); }
@@ -1682,7 +1734,7 @@ const Net = {
 };
 
 // ================= GAME (host-authoritative state machine + UI) =================
-const START_CHIPS = 100, MIN_BET = 10, HAND_START = 5, HAND_DRAW = 3, HAND_MAX = 7, MAX_PLAYERS = 8;
+const START_CHIPS = 100, MIN_BET = 10, HAND_START = 6, HAND_DRAW = 4, HAND_MAX = 10, MAX_PLAYERS = 8;
 const BOT_NAMES = ['阿呆', '小黑', '胖虎', '豆花', '鐵蛋', '波波', '阿嬤', '旺財'];
 const KIND_LABEL = { buff: '增益', debuff: '削弱', wild: '特殊', flip: '正負顛倒' };
 const RARITY = ['', '', '稀有', '傳說'];
@@ -1753,8 +1805,9 @@ class Host {
           const ci = m.card | 0, ti = m.target | 0;
           if (ci < 0 || ci >= p.hand.length || ti < 0 || ti >= G.fighters.length) return;
           const key = p.hand.splice(ci, 1)[0]; G.plays.push({ pid, card: key, target: ti, turn: G.turn });
-        }
-        G.sub[pid] = true; this.checkProgress(); break;
+          if (!p.hand.length) { G.sub[pid] = true; this.checkProgress(); }
+        } else { G.sub[pid] = true; this.checkProgress(); }
+        break;
       }
       case 'bet': {
         if (G.phase !== 'bet' || G.sub[pid]) return;
@@ -1773,7 +1826,7 @@ class Host {
       case 'settings': if (G.phase !== 'lobby') return;
         if ([3, 5, 7, 10].includes(m.rounds)) G.settings.rounds = m.rounds;
         if ([2, 3, 4].includes(m.fighters)) G.settings.fighters = m.fighters;
-        if ([2, 3, 4].includes(m.turns)) G.settings.turns = m.turns; break;
+        break;
       case 'addBot': if (G.phase === 'lobby') this.addBot(); break;
       case 'kick': if (G.phase === 'lobby' && m.pid !== me.pid) { G.players = G.players.filter(p => p.id !== m.pid); const c = this.conns.get(m.pid); if (c) { c.send({ t: 'err', msg: '你被房主移出房間了。' }); this.conns.delete(m.pid); } } break;
       case 'start': if (G.phase === 'lobby' && G.players.length >= 2) this.newGame(); break;
@@ -1803,7 +1856,7 @@ class Host {
     for (let i = 0; i < this.G.settings.fighters; i++) out.push(pool.splice((Math.random() * pool.length) | 0, 1)[0]);
     this.G.fighters = out;
   }
-  startCards() { const G = this.G; G.phase = 'cards'; G.turn = 1; G.sub = {}; for (const p of G.players) p.fav = (Math.random() * G.fighters.length) | 0; this.runBots(); }
+  startCards() { const G = this.G; G.phase = 'cards'; G.turn = 1; G.sub = {}; for (const p of G.players) { p.fav = (Math.random() * G.fighters.length) | 0; if (!p.hand.length) G.sub[p.id] = true; } this.runBots(); this.checkProgress(); }
   runBots() {
     this.botTimers.forEach(clearTimeout); this.botTimers = [];
     const G = this.G, phase = G.phase, turn = G.turn;
@@ -1812,7 +1865,18 @@ class Host {
       this.botTimers.push(setTimeout(() => {
         if (G.phase !== phase || G.turn !== turn || G.sub[p.id]) return;
         if (phase === 'cards') {
-          if (!p.hand.length || Math.random() < 0.2) return this.action(p.id, { t: 'play', card: null });
+          // bots throw a random number of cards at their own pace, then say they are done
+          const playOne = () => {
+            if (G.phase !== 'cards' || G.sub[p.id]) return;
+            if (!p.hand.length || Math.random() < 0.3) return this.action(p.id, { t: 'play', card: null });
+            const ci = (Math.random() * p.hand.length) | 0, c = CARDS[p.hand[ci]];
+            let ti = p.fav;
+            if (c.kind === 'debuff' || (c.kind === 'flip' && !BOT_GOOD.has(p.hand[ci]))) { const others = G.fighters.map((_, i) => i).filter(i => i !== p.fav); ti = others[(Math.random() * others.length) | 0]; }
+            else if (p.hand[ci] === 'chaos') ti = (Math.random() * G.fighters.length) | 0;
+            this.action(p.id, { t: 'play', card: ci, target: ti });
+            this.botTimers.push(setTimeout(playOne, rand(700, 2200)));
+          };
+          return playOne();
           const ci = (Math.random() * p.hand.length) | 0, c = CARDS[p.hand[ci]];
           let ti = p.fav;
           if (c.kind === 'debuff' || (c.kind === 'flip' && !BOT_GOOD.has(p.hand[ci]))) { const others = G.fighters.map((_, i) => i).filter(i => i !== p.fav); ti = others[(Math.random() * others.length) | 0]; }
@@ -1830,8 +1894,7 @@ class Host {
     if (G.phase !== 'cards' && G.phase !== 'bet') return;
     const need = this.participants(); if (need.some(p => !G.sub[p.id])) return;
     if (G.phase === 'cards') {
-      if (G.turn < G.settings.turns) { G.turn++; G.sub = {}; this.runBots(); }
-      else { G.phase = 'bet'; G.sub = {}; this.runBots(); }
+      G.phase = 'bet'; G.sub = {}; this.runBots();
     } else this.startBattle();
   }
   startBattle() {
@@ -1850,7 +1913,9 @@ class Host {
   }
   tick() {
     const G = this.G; if (!this.world || G.bstate !== 'fight') return;
-    const now = performance.now(); this.acc += Math.min(0.25, (now - this.lastT) / 1000) * G.speed; this.lastT = now;
+    const now = performance.now(), rdt = Math.min(0.25, (now - this.lastT) / 1000), w = this.world; this.lastT = now;
+    let f = G.speed; if (w.slow > 0) { w.slow -= rdt; f = 0.18; }
+    this.acc += rdt * f;
     let n = 0; while (this.acc >= 1 / 120 && n < 90) { this.world.step(1 / 120); this.acc -= 1 / 120; n++; }
     this.sendFrame();
     if (this.world.over && !this.finishing) { this.finishing = true; setTimeout(() => this.finish(), 1800); }
@@ -1931,7 +1996,7 @@ const App = {
     document.addEventListener('click', e => this.click(e));
     document.addEventListener('input', e => this.input(e));
     document.addEventListener('keydown', e => { const c = e.target.closest && e.target.closest('#handbar .card[data-i]'); if (c && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); this.ui.sel = this.ui.sel === +c.dataset.i ? null : +c.dataset.i; this.render(); } });
-    window.addEventListener('resize', () => { this.last.hand = ''; this.render(); });
+    let lw = window.innerWidth; window.addEventListener('resize', () => { if (window.innerWidth === lw) return; lw = window.innerWidth; this.last.hand = ''; this.render(); });
     this.initDrag();
     let lastT = performance.now();
     const loop = () => { const now = performance.now(), dt = Math.min(0.05, (now - lastT) / 1000); lastT = now; if (!$('#stage').hidden) this.renderer.draw(dt); requestAnimationFrame(loop); };
@@ -2042,8 +2107,7 @@ const App = {
       return '<section class="sheet sk"><h2>' + (v.code ? '房號 <span class="code hl">' + v.code + '</span>' : '<span class="hl">單機練習</span>') + '</h2>' +
         (v.code ? '<p class="muted">朋友打開同一個網址、輸入房號就能加入。點右上角的房號可以複製邀請連結。</p>' : '<p class="muted">和電腦玩家對戰，不用網路。</p>') +
         '<div class="settings"><div><label>局數</label><div class="segs">' + opt('rounds', [3, 5, 7, 10], ' 局') + '</div></div>' +
-        '<div><label>每局選手</label><div class="segs">' + opt('fighters', [2, 3, 4], ' 顆') + '</div></div>' +
-        '<div><label>每局出牌輪數</label><div class="segs">' + opt('turns', [2, 3, 4], ' 輪') + '</div></div></div>' +
+        '<div><label>每局選手</label><div class="segs">' + opt('fighters', [2, 3, 4], ' 顆') + '</div></div></div>' +
         (v.isHost ? '<div class="row"><button class="btn" data-act="addBot"' + (v.players.length >= MAX_PLAYERS ? ' disabled' : '') + '>＋ 電腦玩家</button>' +
           '<button class="btn primary" data-act="start"' + (v.players.length < 2 ? ' disabled' : '') + '>開始遊戲 →</button></div>' + (v.players.length < 2 ? '<p class="muted small">至少要 2 位玩家，可以先加電腦玩家。</p>' : '')
           : '<p class="wait-note">等房主開始遊戲</p>') + '</section>';
@@ -2061,9 +2125,9 @@ const App = {
         const inner = '<div class="tally">收到 <b>' + tally(f.count) + '</b>' + (f.count ? '（' + f.count + '）' : '') + '</div>' + (mine ? '<div class="gave">' + mine + '</div>' : '') + (selecting ? '<span class="tapme">丟給它</span>' : '');
         return this.fighterBox(v, i, inner, '', selecting ? 'target' : '');
       });
-      const tip = v.mySub ? '<p class="wait-note">這輪出完了，等其他人</p>' : !v.hand.length ? '<p class="muted">你沒有手牌了。</p><div class="row"><button class="btn primary" data-act="pass">跳過這輪</button></div>'
-        : '<p class="tip">把下面的牌<b>拖到</b>選手身上，或先點牌再點選手。別人只看得到每顆球收到幾張牌。</p>';
-      return this.title(v, '祕密丟牌', this.roundTag(v) + ' · 第 ' + v.turn + '/' + S.turns + ' 輪') + tip + fs + this.myPlaysSummary(v) + (!v.mySub && v.hand.length ? '<div class="handspace"></div>' : '');
+      const tip = v.mySub ? '<p class="wait-note">你出完了，等其他人</p>' : !v.hand.length ? '<p class="muted">你沒有手牌了。</p><div class="row"><button class="btn primary" data-act="pass">我出完了</button></div>'
+        : '<p class="tip">大家同時出牌，想丟幾張都可以。把下面的牌<b>拖到</b>選手身上，或先點牌再點選手；丟完按「我出完了」。別人只看得到每顆球收到幾張牌。</p>';
+      return this.title(v, '祕密丟牌', this.roundTag(v)) + tip + fs + this.myPlaysSummary(v) + (!v.mySub && v.hand.length ? '<div class="handspace"></div>' : '');
     }
     if (v.phase === 'bet') {
       const ui = this.ui;
@@ -2096,7 +2160,8 @@ const App = {
     const n = v.hand.length, wide = window.innerWidth >= 760, cw = wide ? 132 : 118, avail = Math.min(window.innerWidth - 70, 900);
     const ov = n > 1 ? Math.min(-6, (avail - n * cw) / (n - 1)) : 0, mid = (n - 1) / 2;
     const cards = v.hand.map((k, i) => { const d = i - mid; return this.cardHtml(k, { idx: i, sel: this.ui.sel === i, style: '--rot:' + (d * Math.min(5, 22 / n)).toFixed(1) + 'deg;--dy:' + Math.round(d * d * Math.min(3, 14 / n)) + 'px;--ov:' + Math.round(ov) + 'px;z-index:' + (i + 1) }); }).join('');
-    return '<div class="tools"><span class="hint">' + (this.ui.sel === null ? '拖一張牌丟給選手' : '點上面的選手丟出去') + '</span><button class="btn small" data-act="pass">跳過這輪</button></div><div class="hand">' + cards + '</div>';
+    const n0 = v.myPlays.length;
+    return '<div class="tools"><span class="hint">' + (this.ui.sel === null ? (n0 ? '已丟 ' + n0 + ' 張，還可以繼續丟' : '拖一張牌丟給選手') : '點上面的選手丟出去') + '</span><button class="btn small primary" data-act="pass">我出完了</button></div><div class="hand">' + cards + '</div>';
   },
   revealHtml(v) {
     const R = v.reveal || { plays: [], bets: [] };
@@ -2136,9 +2201,10 @@ const App = {
     } else { $('#reveal').hidden = true; this.revealToken = null; }
     if (v.phase === 'result' && v.result) {
       const w = v.result.win;
-      ov.innerHTML = w >= 0 ? '<div class="win">' + this.ballHtml(v.fighters[w].key, 70) + '<b>' + DEFS[v.fighters[w].key].name + '</b><span class="stamp">勝</span></div>' : '<div class="win"><b>平手</b></div>';
+      const k = 'win:' + key + ':' + w;
+      if (ov.dataset.k !== k) { ov.innerHTML = w >= 0 ? '<div class="win">' + this.ballHtml(v.fighters[w].key, 70) + '<b>' + DEFS[v.fighters[w].key].name + '</b><span class="stamp">勝</span></div>' : '<div class="win"><b>平手</b></div>'; ov.dataset.k = k; }
       ov.hidden = false;
-    } else if (v.phase === 'battle' && v.bstate === 'fight') { ov.hidden = true; ov.innerHTML = ''; }
+    } else if (v.phase === 'battle' && v.bstate === 'fight') { ov.hidden = true; ov.innerHTML = ''; ov.dataset.k = ''; }
   },
   startReveal(v) {
     const plays = (v.reveal && v.reveal.plays) || [], plan = introPlan(plays.length), box = $('#reveal'), token = {};
