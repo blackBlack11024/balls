@@ -3307,8 +3307,7 @@ const PEER_PREFIX = 'qiuqiu-arena-v1-';
 const NET_LOCAL = new URLSearchParams(location.search).has('local');
 // several STUN servers plus PeerJS's public TURN relays (for strict NAT / mobile networks)
 const ICE_CONFIG = { iceServers: [
-  { urls: ['stun:stun.l.google.com:19302', 'stun:stun1.l.google.com:19302', 'stun:stun2.l.google.com:19302'] },
-  { urls: 'stun:stun.cloudflare.com:3478' },
+  { urls: 'stun:stun.l.google.com:19302' },
   { urls: ['turn:eu-0.turn.peerjs.com:3478', 'turn:us-0.turn.peerjs.com:3478'], username: 'peerjs', credential: 'peerjsp' },
 ], sdpSemantics: 'unified-plan' };
 function wrapPeerConn(conn) {
@@ -3358,26 +3357,30 @@ const Net = {
     }
     if (typeof Peer === 'undefined') { onClose('連線元件載入失敗，請檢查網路後重新整理。'); return { send() {}, destroy() {} }; }
     const status = onStatus || (() => {});
-    let peer = null, conn = null, ever = false, dead = false, tries = 0, timer = null;
-    const MAX = 4;
-    const cleanup = () => { clearTimeout(timer); try { peer && peer.destroy(); } catch (e) {} peer = null; conn = null; };
-    const fail = (text, noRetry) => {
-      if (dead) return; cleanup();
-      if (!noRetry && tries < MAX) { status(ever ? '和房主斷線了，重新連線中…（第 ' + (tries + 1) + ' 次）' : '連線中…（第 ' + (tries + 1) + ' 次嘗試）'); setTimeout(attempt, 800 + tries * 700); return; }
-      dead = true; onClose(text);
-    };
+    // each attempt gets its own id; events from an old (destroyed) attempt are ignored, and an attempt can fail only once
+    let peer = null, conn = null, ever = false, dead = false, tries = 0, timer = null, cur = 0;
+    const MAX = 3;
+    const cleanup = () => { clearTimeout(timer); const p = peer; peer = null; conn = null; try { p && p.destroy(); } catch (e) {} };
     const attempt = () => {
-      if (dead) return; tries++; let opened = false;
-      peer = new Peer({ debug: 1, config: ICE_CONFIG });
-      timer = setTimeout(() => { if (!opened) fail('連線逾時。可能是網路擋住了點對點連線：換個網路（例如手機熱點）再試，或請房主重新整理後重開房間。'); }, 20000);
-      peer.on('open', () => {
-        conn = peer.connect(PEER_PREFIX + code, { reliable: true, serialization: 'json' });
-        const w = wrapPeerConn(conn); w.onMessage(onMsg);
-        w.onClose(() => { if (dead) return; if (opened) { tries = 0; fail('和房主的連線中斷了。'); } else fail('連不上房間。'); });
-        conn.on('open', () => { opened = true; ever = true; tries = 0; clearTimeout(timer); status(''); onOpen(); });
+      if (dead) return; tries++; const id = ++cur; let opened = false, failed = false;
+      const live = () => id === cur && !dead && !failed;
+      const fail = (text, noRetry) => {
+        if (!live()) return; failed = true; cur++; cleanup();
+        if (!noRetry && tries < MAX) { status(ever ? '和房主斷線了，重新連線中…（第 ' + (tries + 1) + ' 次）' : '連線中…（第 ' + (tries + 1) + ' 次嘗試）'); setTimeout(attempt, 1000 + tries * 1000); return; }
+        dead = true; onClose(text);
+      };
+      const p = peer = new Peer({ debug: 1, config: ICE_CONFIG });
+      timer = setTimeout(() => { if (!opened) fail('連線逾時。可能是網路擋住了點對點連線：換個網路（例如手機熱點）再試，或請房主重新整理後重開房間。'); }, 25000);
+      p.on('open', () => {
+        if (!live()) return;
+        const c = conn = p.connect(PEER_PREFIX + code, { reliable: true, serialization: 'json' });
+        const w = wrapPeerConn(c); w.onMessage(m => { if (id === cur) onMsg(m); });
+        w.onClose(() => { if (!live()) return; if (opened) { tries = 0; fail('和房主的連線中斷了。'); } else fail('連不上房間。'); });
+        c.on('open', () => { if (!live()) return; opened = true; ever = true; tries = 0; clearTimeout(timer); status(''); onOpen(); });
       });
-      peer.on('disconnected', () => { if (!opened) return; try { peer.reconnect(); } catch (e) {} });
-      peer.on('error', e => {
+      p.on('disconnected', () => { if (!live() || !opened) return; try { p.reconnect(); } catch (e) {} });
+      p.on('error', e => {
+        if (!live()) return;
         if (e.type === 'peer-unavailable') fail('找不到房號 ' + code + '。請確認房號，或請房主保持頁面開啟。', !ever);
         else if (!opened) fail('連線失敗（' + e.type + '）。可能是網路擋住了點對點連線，換個網路試試。');
       });
