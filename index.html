@@ -419,12 +419,13 @@ body.ingame .fighter.fx.locked .lockb { background: var(--ink); color: var(--hl)
 .settings > div > label .small { font-weight: 400; }
 
 /* many fighters (大亂鬥 / 選秀) */
-body.ingame .fighters.many { grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); grid-auto-rows: 130px; max-height: none; flex: none; }
+body.ingame .fighters.many { grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); grid-auto-rows: minmax(130px, auto); max-height: none; flex: none; }
 body.ingame .fighters.many .fighter.fx { container-type: normal; }
 body.ingame .fighters.many .fighter.fx .fh .ball { --s: 34px !important; }
 body.ingame .fighters.many .fighter.fx .fn b { font-size: 16px; }
 body.ingame .fighters.many .fighter.fx .fn .cnt { font-size: 12px; }
-body.ingame .fighters.many .fighter.fx .sk-desc { font-size: 12.5px; -webkit-line-clamp: 4; }
+body.ingame .fighters.many .fighter.fx .sk-desc { font-size: 13px; -webkit-line-clamp: unset; display: block; overflow: visible; }
+body.ingame .fighters.many .fighter.fx, body.ingame .fighters.many .fighter.fx .fb { overflow: visible; }
 body.ingame .fighters.draftgrid { grid-auto-rows: 150px; }
 .fn .own { font-size: 12px; color: var(--blue); font-weight: 700; } .fn .own.me { color: var(--red); }
 .fn .lb { font-size: 12px; color: var(--ink); background: #fff3b0; border-radius: 4px; padding: 0 4px; margin-top: 2px; white-space: normal; }
@@ -3304,6 +3305,12 @@ class Renderer {
 // ================= NETWORK (PeerJS peer-to-peer; ?local uses BroadcastChannel for same-browser testing) =================
 const PEER_PREFIX = 'qiuqiu-arena-v1-';
 const NET_LOCAL = new URLSearchParams(location.search).has('local');
+// several STUN servers plus PeerJS's public TURN relays (for strict NAT / mobile networks)
+const ICE_CONFIG = { iceServers: [
+  { urls: ['stun:stun.l.google.com:19302', 'stun:stun1.l.google.com:19302', 'stun:stun2.l.google.com:19302'] },
+  { urls: 'stun:stun.cloudflare.com:3478' },
+  { urls: ['turn:eu-0.turn.peerjs.com:3478', 'turn:us-0.turn.peerjs.com:3478'], username: 'peerjs', credential: 'peerjsp' },
+], sdpSemantics: 'unified-plan' };
 function wrapPeerConn(conn) {
   const h = { msg: () => {}, close: () => {} };
   conn.on('data', d => { try { h.msg(typeof d === 'string' ? JSON.parse(d) : d); } catch (e) { console.warn(e); } });
@@ -3329,7 +3336,7 @@ const Net = {
       setTimeout(() => onReady(code), 50); return { destroy: () => ch.close() };
     }
     if (typeof Peer === 'undefined') { onError('連線元件載入失敗，請檢查網路後重新整理。'); return { destroy() {} }; }
-    const peer = new Peer(PEER_PREFIX + code, { debug: 1 });
+    const peer = new Peer(PEER_PREFIX + code, { debug: 1, config: ICE_CONFIG });
     let ready = false;
     peer.on('open', () => { ready = true; onReady(code); });
     peer.on('connection', conn => { conn.on('open', () => onConn(wrapPeerConn(conn))); });
@@ -3342,7 +3349,7 @@ const Net = {
     return { destroy: () => peer.destroy() };
   },
   // Join a room. Returns {send}. Calls onOpen(), onMsg(m), onClose(text).
-  join(code, onOpen, onMsg, onClose) {
+  join(code, onOpen, onMsg, onClose, onStatus) {
     if (NET_LOCAL) {
       const ch = new BroadcastChannel('qq-' + code), me = Math.random().toString(36).slice(2);
       ch.onmessage = ev => { if (ev.data.to === me) onMsg(ev.data.m); };
@@ -3350,20 +3357,33 @@ const Net = {
       setTimeout(onOpen, 50); return api;
     }
     if (typeof Peer === 'undefined') { onClose('連線元件載入失敗，請檢查網路後重新整理。'); return { send() {}, destroy() {} }; }
-    const peer = new Peer({ debug: 1 });
-    let conn = null, opened = false, closed = false;
-    const fail = t => { if (closed) return; closed = true; onClose(t); };
-    peer.on('open', () => {
-      conn = peer.connect(PEER_PREFIX + code, { reliable: true, serialization: 'json' });
-      const w = wrapPeerConn(conn); w.onMessage(onMsg); w.onClose(() => fail(opened ? '和房主的連線中斷了。' : '連不上房間。'));
-      conn.on('open', () => { opened = true; onOpen(); });
-    });
-    peer.on('error', e => {
-      if (e.type === 'peer-unavailable') fail('找不到房號 ' + code + '。請確認房號，或請房主保持頁面開啟。');
-      else if (!opened) fail('連線失敗（' + e.type + '）。可能是網路擋住了點對點連線，換個網路試試。');
-    });
-    setTimeout(() => { if (!opened) fail('連線逾時。請確認房號，或換個網路再試。'); }, 15000);
-    return { send: m => { if (conn && conn.open) conn.send(m); }, destroy: () => { try { peer.destroy(); } catch (e) {} } };
+    const status = onStatus || (() => {});
+    let peer = null, conn = null, ever = false, dead = false, tries = 0, timer = null;
+    const MAX = 4;
+    const cleanup = () => { clearTimeout(timer); try { peer && peer.destroy(); } catch (e) {} peer = null; conn = null; };
+    const fail = (text, noRetry) => {
+      if (dead) return; cleanup();
+      if (!noRetry && tries < MAX) { status(ever ? '和房主斷線了，重新連線中…（第 ' + (tries + 1) + ' 次）' : '連線中…（第 ' + (tries + 1) + ' 次嘗試）'); setTimeout(attempt, 800 + tries * 700); return; }
+      dead = true; onClose(text);
+    };
+    const attempt = () => {
+      if (dead) return; tries++; let opened = false;
+      peer = new Peer({ debug: 1, config: ICE_CONFIG });
+      timer = setTimeout(() => { if (!opened) fail('連線逾時。可能是網路擋住了點對點連線：換個網路（例如手機熱點）再試，或請房主重新整理後重開房間。'); }, 20000);
+      peer.on('open', () => {
+        conn = peer.connect(PEER_PREFIX + code, { reliable: true, serialization: 'json' });
+        const w = wrapPeerConn(conn); w.onMessage(onMsg);
+        w.onClose(() => { if (dead) return; if (opened) { tries = 0; fail('和房主的連線中斷了。'); } else fail('連不上房間。'); });
+        conn.on('open', () => { opened = true; ever = true; tries = 0; clearTimeout(timer); status(''); onOpen(); });
+      });
+      peer.on('disconnected', () => { if (!opened) return; try { peer.reconnect(); } catch (e) {} });
+      peer.on('error', e => {
+        if (e.type === 'peer-unavailable') fail('找不到房號 ' + code + '。請確認房號，或請房主保持頁面開啟。', !ever);
+        else if (!opened) fail('連線失敗（' + e.type + '）。可能是網路擋住了點對點連線，換個網路試試。');
+      });
+    };
+    attempt();
+    return { send: m => { if (conn && conn.open) conn.send(m); }, destroy: () => { dead = true; cleanup(); } };
   },
 };
 
@@ -3788,7 +3808,8 @@ const App = {
     this.conn = Net.join(code,
       () => { this.conn.send({ t: 'join', pid: me.pid, name: me.name }); this.homeErr(''); },
       m => this.onMsg(m),
-      text => { this.leaveGame(); this.homeErr(text); });
+      text => { this.leaveGame(); this.homeErr(text); },
+      t => { if (!t) return; if ($('#game').hidden) this.homeErr(t); else this.toast(t); });
   },
   onMsg(m) {
     if (m.t === 'view') { if ($('#game').hidden) this.enterGame(); this.onView(m.v); }
