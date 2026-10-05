@@ -2000,8 +2000,8 @@ defFighter({ key: 'firework', name: '煙火', glyph: '花', color: '#f15bb5', sp
     b.vx -= Math.cos(a) * 260; b.vy -= Math.sin(a) * 260; w.ev({ k: 'shoot' }); }); },
   onProjHit(b) { b.s.h++; if (b.s.h % 6 === 0) b.s.n = Math.min(14, b.s.n + 1); }, stat: b => '火花 ' + b.s.n });
 
-defFighter({ key: 'snowman', name: '雪人', glyph: '雪', color: '#90a8c3', speed: 200, hp: 120, desc: '滾出越滾越大的雪球，撞到牆會反彈，直到打中人才會消失。打中會讓敵人變慢，滾越久越痛。',
-  update(b, w, dt) { every(b, 'cd', dt, 1.4, () => { const e = w.nearest(b); if (!e) return; fireBullet(w, b, angTo(b, e), { kind: 'ball', speed: 360, dmg: 2, r: 4, life: 7, bounces: 99, color: '#f8f9fa', update(p, W, d) { p.r = Math.min(16, p.r + 6 * d); p.dmg = Math.min(8, p.dmg + 2 * d); }, onHit(p, t, W) { W.addChill(t, 0.15); } }); }); },
+defFighter({ key: 'snowman', name: '雪人', glyph: '雪', color: '#90a8c3', speed: 200, hp: 120, desc: '滾出越滾越大的雪球，撞到牆或武器都會反彈，直到打中人才會消失（場上最多 3 顆）。打中會讓敵人變慢，滾越久越痛。',
+  update(b, w, dt) { every(b, 'cd', dt, 1.5, () => { const e = w.nearest(b); if (!e) return; if (w.proj.filter(p => p.owner === b && !p.dead && p.snow).length >= 3) return; fireBullet(w, b, angTo(b, e), { kind: 'ball', speed: 360, dmg: 2, r: 4, life: 30, bounces: 9999, snow: 1, color: '#f8f9fa', update(p, W, d) { p.r = Math.min(16, p.r + 6 * d); p.dmg = Math.min(6.5, p.dmg + 1.6 * d); }, onHit(p, t, W) { W.addChill(t, 0.15); }, onBlocked(p, W, o) { const d = Math.hypot(p.x - o.x, p.y - o.y) || 1, sp = Math.hypot(p.vx, p.vy); p.vx = (p.x - o.x) / d * sp; p.vy = (p.y - o.y) / d * sp; W.spark(p.x, p.y, '#f8f9fa', 4); } }); }); },
   stat: () => '雪球' });
 
 defFighter({ key: 'mimic', name: '模仿者', glyph: '仿', color: '#b5838d', speed: 215, desc: '開戰時隨機變成另一種選手的能力，每場都不一樣。',
