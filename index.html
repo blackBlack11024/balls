@@ -426,7 +426,7 @@ body.ingame .fighters.many .fighter.fx .fn b { font-size: 16px; }
 body.ingame .fighters.many .fighter.fx .fn .cnt { font-size: 12px; }
 body.ingame .fighters.many .fighter.fx .sk-desc { font-size: 13px; -webkit-line-clamp: unset; display: block; overflow: visible; }
 body.ingame .fighters.many .fighter.fx, body.ingame .fighters.many .fighter.fx .fb { overflow: visible; }
-body.ingame .fighters.draftgrid { grid-auto-rows: 150px; }
+body.ingame .fighters.draftgrid { grid-auto-rows: minmax(150px, auto); }
 .fn .own { font-size: 12px; color: var(--blue); font-weight: 700; } .fn .own.me { color: var(--red); }
 .fn .lb { font-size: 12px; color: var(--ink); background: #fff3b0; border-radius: 4px; padding: 0 4px; margin-top: 2px; white-space: normal; }
 #hud[data-n="6"], #hud[data-n="8"], #hud[data-n="12"], #hud[data-n="16"], #hud[data-n="20"] { grid-auto-flow: row !important; grid-template-columns: repeat(auto-fill, minmax(118px, 1fr)) !important; gap: 4px; max-height: 30vh; overflow-y: auto; }
@@ -459,6 +459,9 @@ body.ingame #panel .betbox.sticky-actions { padding: 10px 12px; }
 .pnote { display: block; font-size: 12px; color: #6c757d; }
 .toastn { position: fixed; left: 50%; top: 70px; transform: translateX(-50%); z-index: 70; background: #fffdf7; border: 2.5px solid var(--ink); border-radius: 10px; box-shadow: 4px 4px 0 var(--ink); padding: 8px 16px; font-size: 18px; font-weight: 700; transition: opacity .4s, transform .4s; }
 .dexh .dext { display: block; font-size: 13px; font-weight: 400; color: #6c757d; margin-top: 2px; }
+.bantip { background: #ffe3e3; border: 2px solid var(--ink); border-radius: 10px; padding: 6px 10px; }
+.mini.banned { text-decoration: line-through; }
+.draftgrid.banning .fighter.bancand:hover { outline: 3px solid #e5484d; outline-offset: 2px; }
 .toastn.out { opacity: 0; transform: translate(-50%, -12px); }
 </style>
 </head>
@@ -3416,7 +3419,7 @@ function randCode() { const A = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'; let s = ''; 
 class Host {
   constructor(code, solo) {
     this.code = code; this.solo = solo; this.conns = new Map(); this.world = null; this.stopTick = null; this.botTimers = [];
-    this.G = { phase: 'lobby', settings: { rounds: 5, fighters: 2, cards: 1, handStart: 6, handDraw: 4, handMax: 10, playMax: 0, arena: 480, betOpen: 0, draft: 0, elim: 0 }, locks: [], owners: [], pool: [], order: [], pickIdx: 0, players: [], round: 0, fighters: [], turn: 0, plays: [], sub: {}, bets: {}, carry: 0,
+    this.G = { phase: 'lobby', settings: { rounds: 5, fighters: 2, cards: 1, handStart: 6, handDraw: 4, handMax: 10, playMax: 0, arena: 480, betOpen: 0, draft: 0, ban: 0, elim: 0 }, locks: [], owners: [], pool: [], order: [], pickIdx: 0, players: [], round: 0, fighters: [], turn: 0, plays: [], sub: {}, bets: {}, carry: 0,
       result: null, bstate: '', speed: 1, history: [], pend: {}, fake: {}, fakeBy: {}, fakeBet: {}, reserved: [] };
     this.addPlayer(me.pid, me.name, false);
     if (solo) { this.addBot(); this.addBot(); this.addBot(); }
@@ -3488,7 +3491,7 @@ class Host {
         G.sub[pid] = true; this.checkProgress(); break;
       }
       case 'draft': {
-        if (G.phase !== 'draft' || G.order[G.pickIdx] !== pid || !G.pool.includes(m.k)) return;
+        if (G.phase !== 'draft' || this.draftTurn() !== pid || !G.pool.includes(m.k)) return;
         this.draftPick(m.k); break;
       }
       case 'rename': { p.name = String(m.name || p.name).slice(0, 12); break; }
@@ -3503,7 +3506,7 @@ class Host {
         if ([3, 5, 7, 10].includes(m.rounds)) G.settings.rounds = m.rounds;
         if ([2, 3, 4, 6, 8, 12, 16, 20].includes(m.fighters)) G.settings.fighters = m.fighters;
         if ([360, 480, 640].includes(m.arena)) G.settings.arena = m.arena;
-        for (const k of ['betOpen', 'draft', 'elim']) if ([0, 1].includes(m[k])) G.settings[k] = m[k];
+        for (const k of ['betOpen', 'draft', 'ban', 'elim']) if ([0, 1].includes(m[k])) G.settings[k] = m[k];
         if ([0, 1].includes(m.cards)) G.settings.cards = m.cards;
         if ([3, 6, 10, 15].includes(m.handStart)) G.settings.handStart = m.handStart;
         if ([0, 2, 4, 6].includes(m.handDraw)) G.settings.handDraw = m.handDraw;
@@ -3516,7 +3519,7 @@ class Host {
       case 'start': if (G.phase === 'lobby' && G.players.length >= 2) this.newGame(); break;
       case 'reroll': if (G.phase === 'pick') this.pickFighters(); break;
       case 'confirm': if (G.phase === 'pick') { if (G.settings.cards) this.startCards(); else { G.phase = 'bet'; G.sub = {}; for (const p of G.players) p.fav = (Math.random() * G.fighters.length) | 0; this.runBots(); } } break;
-      case 'force': if (G.phase === 'draft') { this.draftPick(G.pool[(Math.random() * G.pool.length) | 0]); break; }
+      case 'force': if (G.phase === 'draft') { const a = G.pool.filter(k => G.dstage !== 'ban' || !(G.reserved || []).some(r => r.key === k)); this.draftPick(a[(Math.random() * a.length) | 0]); break; }
         if (G.phase === 'cards' || G.phase === 'bet') { if (G.phase === 'cards') this.resolvePend(); for (const p of G.players) G.sub[p.id] = true; this.checkProgress(); } break;
       case 'next': if (G.phase === 'result') { if (!G.settings.elim && G.round >= G.settings.rounds) G.phase = 'final'; else this.nextRound(); } break;
       case 'again': if (G.phase === 'final') { G.phase = 'lobby'; G.round = 0; G.history = []; G.reserved = []; for (const p of G.players) { p.chips = START_CHIPS; p.hand = []; p.out = false; } } break;
@@ -3565,12 +3568,22 @@ class Host {
     // every remaining player drafts one fighter (they represent it); pick order rotates each round
     const G = this.G, act = this.alive(), n = act.length, pool = ROSTER.slice(), off = (G.round - 1) % n;
     G.pool = []; for (const r of G.reserved || []) { if (!G.pool.includes(r.key)) { G.pool.push(r.key); pool.splice(pool.indexOf(r.key), 1); } }
-    while (G.pool.length < Math.min(ROSTER.length, n * 2 + 2)) G.pool.push(pool.splice((Math.random() * pool.length) | 0, 1)[0]);
+    const ban = !!G.settings.ban;
+    while (G.pool.length < Math.min(ROSTER.length, n * 2 + 2 + (ban ? n : 0))) G.pool.push(pool.splice((Math.random() * pool.length) | 0, 1)[0]);
     G.order = act.map((_, i) => act[(i + off) % n].id); G.pickIdx = 0; G.fighters = []; G.owners = []; G.phase = 'draft';
+    G.bans = []; G.dstage = ban && n > 1 ? 'ban' : 'pick'; G.banIdx = 0;
     this.draftBot();
   }
+  // ban phase goes in reverse pick order (the last to pick bans first)
+  draftTurn() { const G = this.G; return G.dstage === 'ban' ? G.order[G.order.length - 1 - G.banIdx] : G.order[G.pickIdx]; }
   draftPick(k) {
     const G = this.G; if (G.phase !== 'draft' || !k) return;
+    if (G.dstage === 'ban') {
+      if ((G.reserved || []).some(r => r.key === k)) return;
+      G.bans.push({ k, pid: this.draftTurn() }); G.pool = G.pool.filter(x => x !== k); G.banIdx++;
+      if (G.banIdx >= G.order.length) G.dstage = 'pick';
+      this.draftBot(); this.sync(); return;
+    }
     G.fighters.push(k); G.owners.push(G.order[G.pickIdx]); G.pool = G.pool.filter(x => x !== k); G.pickIdx++;
     if (G.pickIdx >= G.order.length) {
       for (const p of G.players) p.fav = Math.max(0, G.owners.indexOf(p.id));
@@ -3579,8 +3592,9 @@ class Host {
     this.sync();
   }
   draftBot() {
-    const G = this.G, pid = G.order[G.pickIdx], p = this.P(pid); if (!p) return;
-    if (p.bot || !p.online) { const idx = G.pickIdx; this.botTimers.push(setTimeout(() => { if (G.phase === 'draft' && G.pickIdx === idx) this.draftPick(G.pool[(Math.random() * G.pool.length) | 0]); }, p.bot ? rand(700, 1500) : 1200)); }
+    const G = this.G, pid = this.draftTurn(), p = this.P(pid); if (!p) return;
+    const pickable = () => G.pool.filter(k => G.dstage !== 'ban' || !(G.reserved || []).some(r => r.key === k));
+    if (p.bot || !p.online) { const st = G.dstage + (G.dstage === 'ban' ? G.banIdx : G.pickIdx); this.botTimers.push(setTimeout(() => { if (G.phase === 'draft' && G.dstage + (G.dstage === 'ban' ? G.banIdx : G.pickIdx) === st) { const a = pickable(); this.draftPick(a[(Math.random() * a.length) | 0]); } }, p.bot ? rand(700, 1500) : 1200)); }
   }
   hasOtherHumans() { return this.G.players.some(p => !p.bot && p.id !== me.pid); }
   pickFighters() {
@@ -3735,14 +3749,14 @@ class Host {
       code: this.solo ? '' : this.code, solo: this.solo, phase: G.phase, isHost: pid === me.pid, settings: G.settings, round: G.round, turn: G.turn,
       carry: G.carry, speed: G.speed, bstate: G.bstate, locks: G.locks.slice(), introDur: G.introDur,
       owners: G.owners.map(id => id ? name(id) : ''), ownerMe: G.owners.map(id => id === pid),
-      draft: G.phase === 'draft' ? { pool: G.pool.slice(), order: G.order.map(name), pickIdx: G.pickIdx, myTurn: G.order[G.pickIdx] === pid } : null,
+      draft: G.phase === 'draft' ? { pool: G.pool.slice(), order: G.order.map(name), pickIdx: G.pickIdx, stage: G.dstage, who: name(this.draftTurn()), myTurn: this.draftTurn() === pid, bans: (G.bans || []).map(b => ({ k: b.k, name: name(b.pid) })), locked: (G.reserved || []).map(r => r.key) } : null,
       liveBets: G.settings.betOpen && G.phase === 'bet' ? Object.entries(G.bets).map(([id, b]) => ({ name: name(id), mine: id === pid, f: b.f, amt: b.amt })).concat(Object.keys(G.fakeBet).filter(i => !(G.fakeBy[i] || []).includes(pid)).map(i => ({ name: '？？', mine: false, f: +i, amt: G.fakeBet[i] }))) : null,
       fighters: G.fighters.map((k, i) => ({ key: k, count: G.plays.filter(pl => pl.target === i).length + (G.phase === 'cards' || G.phase === 'bet' ? ((G.fakeBy[i] || []).includes(pid) ? 0 : G.fake[i] || 0) : 0) })),
       pend: G.pend[pid] !== undefined && G.plays[G.pend[pid]] ? { card: G.plays[G.pend[pid]].card, a: G.plays[G.pend[pid]].target } : null,
       intel: (G.phase === 'cards' || G.phase === 'bet') && p.intel ? p.intel : null,
       note: p.note || null,
       reserved: (G.reserved || []).map(r => r.key),
-      players: G.players.map(x => ({ id: x.id, name: x.name, bot: x.bot, online: x.online, chips: x.chips, hand: x.hand.length, done: !!G.sub[x.id], host: x.id === me.pid, out: !!x.out, picking: G.phase === 'draft' && G.order[G.pickIdx] === x.id })),
+      players: G.players.map(x => ({ id: x.id, name: x.name, bot: x.bot, online: x.online, chips: x.chips, hand: x.hand.length, done: !!G.sub[x.id], host: x.id === me.pid, out: !!x.out, picking: G.phase === 'draft' && this.draftTurn() === x.id })),
       hand: p.hand.slice(), chips: p.chips,
       myPlays: G.plays.filter(pl => pl.pid === pid).map(pl => ({ card: pl.card, target: pl.target, turn: pl.turn, t2: pl.t2 })),
       myBet: G.bets[pid] || null, mySub: !!G.sub[pid],
@@ -3909,9 +3923,9 @@ const App = {
     return '<div class="fighter fx ' + (o.cls || '') + '" style="--c:' + d.color + '" data-i="' + i + '"' + (o.act ? ' data-act="' + o.act + '" role="button" tabindex="0"' : '') + '>' +
       '<div class="fh">' + this.ballHtml(f.key, 40) + '<div class="fn"><b>' + d.name + '</b>' + (v.owners && v.owners[i] ? '<span class="own' + (v.ownerMe && v.ownerMe[i] ? ' me' : '') + '">' + esc(v.owners[i]) + ' 的</span>' : '') + (o.noCount ? '' : '<span class="cnt">收到 ' + f.count + ' 張</span>') + (o.live || '') + '</div>' + tog + '</div><div class="fb">' + body + '</div></div>';
   },
-  poolCard(k, can) {
+  poolCard(k, can, ban) {
     const d = DEFS[k];
-    return '<div class="fighter fx' + (can ? ' targetable' : '') + '" style="--c:' + d.color + '"' + (can ? ' data-act="draftPick" data-k="' + k + '" role="button" tabindex="0"' : '') + '><div class="fh">' + this.ballHtml(k, 40) + '<div class="fn"><b>' + d.name + '</b></div></div><div class="fb"><p class="sk-desc">' + d.desc + '</p></div></div>';
+    return '<div class="fighter fx' + (can ? ' targetable' : '') + (can && ban ? ' bancand' : '') + '" style="--c:' + d.color + '"' + (can ? ' data-act="draftPick" data-k="' + k + '" role="button" tabindex="0"' : '') + '><div class="fh">' + this.ballHtml(k, 40) + '<div class="fn"><b>' + d.name + '</b></div></div><div class="fb"><p class="sk-desc">' + d.desc + '</p></div></div>';
   },
   title(v, text, step) { return '<div class="phase-title"><h2><span class="hl">' + text + '</span></h2>' + (step ? '<span class="step">' + step + '</span>' : '') + '</div>'; },
   roundTag(v) { return v.settings.elim ? '第 ' + v.round + ' 局・淘汰賽' : '第 ' + v.round + '/' + v.settings.rounds + ' 局'; },
@@ -3929,6 +3943,7 @@ const App = {
         '<div class="settings">' + (S.elim ? '' : row('局數', opt('rounds', [3, 5, 7, 10], ['3 局', '5 局', '7 局', '10 局']))) +
         row('淘汰賽', opt('elim', [0, 1], ['關', '開']), S.elim ? '籌碼輸光就出局，打到剩一人' : '') +
         row('選秀模式', opt('draft', [0, 1], ['關', '開']), S.draft ? '每人輪流挑一顆球代表自己，贏了主人 +50' : '') +
+        (S.draft ? row('禁用（Ban）', opt('ban', [0, 1], ['關', '開']), S.ban ? '選秀前每人先禁一顆，最後挑的人最先禁' : '') : '') +
         (S.draft ? '' : row('每局選手', opt('fighters', [2, 3, 4, 6, 8, 12, 16, 20], ['2', '3', '4', '6', '8', '12', '16', '20']), S.fighters > 4 ? '大亂鬥' : '')) +
         row('擂台大小', opt('arena', [360, 480, 640], ['小', '中', '大'])) +
         row('下注', opt('betOpen', [0, 1], ['祕密', '公開']), S.betOpen ? '大家看得到誰押了誰、押多少' : '') +
@@ -3939,11 +3954,14 @@ const App = {
     }
     const grid = (inner, cls) => '<div class="fighters' + (n === 1 ? ' n1' : '') + (cls ? ' ' + cls : '') + '" style="--n:' + n + '">' + v.fighters.map((_, i) => inner(i)).join('') + '</div>';
     if (v.phase === 'draft' && v.draft) {
-      const D = v.draft, who = D.order[D.pickIdx] || '';
+      const D = v.draft, who = D.who || '', banning = D.stage === 'ban';
       const picked = v.fighters.map((f, i) => '<span class="mini buff">' + DEFS[f.key].name + ' — ' + esc(v.owners[i] || '') + '</span>').join(' ');
-      return this.title(v, '選秀', this.roundTag(v)) + '<p class="tip">' + (D.myTurn ? '輪到你了！挑一顆球代表你出戰，它贏了你 +50' : '輪到 <b>' + esc(who) + '</b> 挑選手') + '</p>' +
+      const banned = (D.bans || []).map(b => '<span class="mini debuff banned">' + DEFS[b.k].name + ' — ' + esc(b.name) + '</span>').join(' ');
+      const tip = banning ? (D.myTurn ? '輪到你禁用！點一顆球，這局誰都不能選它' : '輪到 <b>' + esc(who) + '</b> 禁用一顆球') : (D.myTurn ? '輪到你了！挑一顆球代表你出戰，它贏了你 +50' : '輪到 <b>' + esc(who) + '</b> 挑選手');
+      return this.title(v, banning ? '禁用' : '選秀', this.roundTag(v)) + '<p class="tip' + (banning ? ' bantip' : '') + '">' + tip + '</p>' +
+        (banned ? '<p class="muted small" style="margin:2px 0 0">已禁：' + banned + '</p>' : '') +
         (picked ? '<p class="muted small" style="margin:2px 0 0">已選：' + picked + '</p>' : '') +
-        '<div class="fighters fxgrid many draftgrid">' + D.pool.map(k => this.poolCard(k, D.myTurn)).join('') + '</div>';
+        '<div class="fighters fxgrid many draftgrid' + (banning ? ' banning' : '') + '">' + D.pool.map(k => this.poolCard(k, D.myTurn && !(banning && (D.locked || []).includes(k)), banning)).join('') + '</div>';
     }
     if (v.phase === 'pick') {
       const L = v.locks || [], nl = L.filter(Boolean).length;
